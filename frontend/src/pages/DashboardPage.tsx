@@ -54,13 +54,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     )
     .slice(0, 3);
 
+  // Dynamic greeting based on the user's local browser time
+  const hour = new Date().getHours();
+  const greeting =
+    hour >= 5 && hour < 12
+      ? 'Good Morning'
+      : hour >= 12 && hour < 17
+      ? 'Good Afternoon'
+      : 'Good Evening';
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
       {/* Header Greeting & Quick Operational Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-            Good Morning, {currentUser.name}
+            {greeting}, {currentUser.name}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
             Kifa Food Co. wholesale operations, dispatches & collection overview.

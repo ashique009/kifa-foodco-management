@@ -1,0 +1,1233 @@
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  ReactNode,
+} from 'react';
+import {
+  Product,
+  Shop,
+  Vehicle,
+  Staff,
+  Trip,
+  Sale,
+  Payment,
+  ReturnItem,
+  Expense,
+  Supplier,
+  Purchase,
+  BusinessAlert,
+  TripStatus,
+  ShopLedgerEntry,
+  ProductUnit,
+} from '../types';
+import {
+  authApi,
+  productsApi,
+  stockApi,
+  batchesApi,
+  suppliersApi,
+  purchasesApi,
+  vehiclesApi,
+  staffApi,
+  shopsApi,
+  tripsApi,
+  salesApi,
+  paymentsApi,
+  returnsApi,
+} from '../api';
+import {
+  getToken,
+  setToken,
+  clearToken,
+  getStoredUser,
+  setStoredUser,
+  AuthUser,
+} from '../api/client';
+import { initialAlerts } from '../data/mockData';
+
+export interface ToastNotification {
+  id: string;
+  type: 'success' | 'error' | 'info' | 'warning';
+  title: string;
+  message?: string;
+}
+
+interface BakeryContextType {
+  // Auth state
+  isAuthenticated: boolean;
+  isLoadingData: boolean;
+  currentUser: { id?: string; username?: string; name: string; role: string };
+  login: (user: any) => void;
+  logout: () => void;
+  refreshAllData: () => Promise<void>;
+
+  // Entities
+  products: Product[];
+  shops: Shop[];
+  vehicles: Vehicle[];
+  staff: Staff[];
+  trips: Trip[];
+  sales: Sale[];
+  payments: Payment[];
+  returns: ReturnItem[];
+  expenses: Expense[];
+  suppliers: Supplier[];
+  purchases: Purchase[];
+  alerts: BusinessAlert[];
+
+  // Toasts
+  toasts: ToastNotification[];
+  showToast: (type: ToastNotification['type'], title: string, message?: string) => void;
+  removeToast: (id: string) => void;
+
+  // Derived Business Metrics
+  todaySalesTotal: number;
+  todayCollectionTotal: number;
+  totalOutstanding: number;
+  activeTripsCount: number;
+  paymentBreakdown: {
+    cash: number;
+    upi: number;
+    card: number;
+    bankTransfer: number;
+  };
+
+  createTrip: (tripData: Omit<Trip, 'id' | 'tripNumber'>) => Promise<Trip | null>;
+  updateTripStatus: (tripId: string, status: TripStatus) => Promise<void>;
+  markShopVisited: (tripId: string, shopId: string) => Promise<void>;
+  recordSale: (saleData: Omit<Sale, 'id' | 'invoiceNumber' | 'date' | 'time'> & { idempotencyKey?: string }) => Promise<Sale | null>;
+  receivePayment: (paymentData: Omit<Payment, 'id' | 'receiptNumber' | 'date'> & { idempotencyKey?: string }) => Promise<Payment | null>;
+  recordReturn: (returnData: Omit<ReturnItem, 'id' | 'date'>) => Promise<ReturnItem | null>;
+  addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
+  archiveProduct: (id: string) => Promise<void>;
+  deleteProduct: (id: string) => Promise<void>;
+  isProductInUse: (id: string) => boolean;
+  addShop: (shop: Omit<Shop, 'id' | 'totalSales' | 'totalCollected' | 'createdAt'>) => Promise<void>;
+  updateShop: (id: string, shop: Partial<Shop>) => void;
+  addVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>;
+  updateVehicle: (id: string, vehicle: Partial<Vehicle>) => void;
+  addStaff: (staffMember: Omit<Staff, 'id'>) => Promise<void>;
+  updateStaff: (id: string, staffMember: Partial<Staff>) => void;
+  archiveStaff: (id: string) => Promise<void>;
+  deleteStaff: (id: string) => Promise<void>;
+  isStaffInUse: (id: string) => boolean;
+  addExpense: (expense: Omit<Expense, 'id' | 'date'>) => void;
+  addPurchase: (purchase: Omit<Purchase, 'id' | 'invoiceNumber' | 'date'>) => Promise<void>;
+  addSupplier: (supplier: Omit<Supplier, 'id'>) => Promise<void>;
+  updateSupplier: (id: string, supplier: Partial<Supplier>) => void;
+  archiveSupplier: (id: string) => void;
+  deleteSupplier: (id: string) => void;
+  isSupplierInUse: (id: string) => boolean;
+  getShopLedger: (shopId: string) => ShopLedgerEntry[];
+  resetToDemoData: () => void;
+}
+
+const BakeryContext = createContext<BakeryContextType | undefined>(undefined);
+
+export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  // Auth state
+  const [token, setTokenState] = useState<string | null>(() => getToken());
+  const [currentUser, setCurrentUserState] = useState<{
+    id?: string;
+    username?: string;
+    name: string;
+    role: string;
+  }>(() => {
+    const stored = getStoredUser();
+    if (stored) {
+      return {
+        id: stored.id,
+        username: stored.username,
+        name: stored.name || stored.username,
+        role: stored.role === 'admin' ? 'Business Owner / Admin' : stored.role,
+      };
+    }
+    return { name: 'Admin', role: 'Business Owner / Admin' };
+  });
+
+  const isAuthenticated = Boolean(token);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+
+  // Entities state
+  const [products, setProducts] = useState<Product[]>([]);
+  const [shops, setShops] = useState<Shop[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [returns, setReturns] = useState<ReturnItem[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [alerts, setAlerts] = useState<BusinessAlert[]>(initialAlerts);
+  const [toasts, setToasts] = useState<ToastNotification[]>([]);
+
+  // Toast handler
+  const showToast = useCallback(
+    (type: ToastNotification['type'], title: string, message?: string) => {
+      const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+      setToasts((prev) => [...prev, { id, type, title, message }]);
+      setTimeout(() => {
+        removeToast(id);
+      }, 4500);
+    },
+    []
+  );
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Handle unauthorized events
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      setTokenState(null);
+      clearToken();
+      showToast('error', 'Session Expired', 'Please sign in again to continue.');
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [showToast]);
+
+  const login = (user: AuthUser) => {
+    const activeToken = getToken();
+    setTokenState(activeToken);
+    setCurrentUserState({
+      id: user.id,
+      username: user.username,
+      name: user.name || user.username,
+      role: user.role === 'admin' ? 'Business Owner / Admin' : user.role,
+    });
+    showToast('success', 'Welcome Back', `Logged in as ${user.username}`);
+  };
+
+  const logout = () => {
+    clearToken();
+    setTokenState(null);
+    showToast('info', 'Logged Out', 'You have been signed out safely.');
+  };
+
+  // Helper to map backend status
+  const mapBackendVehicleStatus = (status: string): Vehicle['status'] => {
+    if (status === 'on_trip') return 'On Trip';
+    if (status === 'maintenance') return 'Maintenance';
+    if (status === 'not_available') return 'Not Available';
+    return 'Available';
+  };
+
+  const mapBackendTripStatus = (status: string): TripStatus => {
+    if (status === 'in_progress') return 'In Progress';
+    if (status === 'loaded') return 'Loaded';
+    if (status === 'completed') return 'Completed';
+    if (status === 'cancelled') return 'Cancelled';
+    return 'Draft';
+  };
+
+  const mapBackendStaffRole = (role?: string): Staff['role'] => {
+    if (!role) return 'Sales Staff';
+    const r = role.toLowerCase().trim().replace(/\s+/g, '_');
+    if (r === 'driver') return 'Driver';
+    if (r === 'manager') return 'Manager';
+    if (r === 'admin') return 'Admin';
+    return 'Sales Staff';
+  };
+
+  const mapStaffRoleToBackend = (role?: string): string => {
+    if (!role) return 'sales_staff';
+    const r = role.toLowerCase().trim().replace(/\s+/g, '_');
+    if (r === 'driver') return 'driver';
+    if (r === 'manager') return 'manager';
+    if (r === 'admin') return 'admin';
+    return 'sales_staff';
+  };
+
+  // FETCH ALL DATA FROM REAL BACKEND
+  const refreshAllData = useCallback(async () => {
+    if (!getToken()) return;
+    setIsLoadingData(true);
+
+    try {
+      // 1. Fetch Products & Godown Stock in parallel
+      const [productsRes, stockRes] = await Promise.all([
+        productsApi.getAll().catch(() => ({ products: [] })),
+        stockApi.getGodownStock().catch(() => ({ stock: [] })),
+      ]);
+
+      const godownStockItems = stockRes.stock || [];
+      const mappedProducts: Product[] = (productsRes.products || []).map((p: any) => {
+        // Compute total quantity and batches for this product
+        const productStockEntries = godownStockItems.filter(
+          (s: any) => s.product_id === p.id
+        );
+        const totalGodownQty = productStockEntries.reduce(
+          (sum: number, s: any) => sum + Number(s.quantity || 0),
+          0
+        );
+
+        const batches = productStockEntries.map((s: any) => ({
+          batchNumber: s.batch_number || 'Default',
+          expiryDate: s.expiry_date ? s.expiry_date.slice(0, 10) : '2026-09-30',
+          quantity: Number(s.quantity || 0),
+        }));
+
+        return {
+          id: p.id,
+          name: p.product_name,
+          sku: p.sku || '',
+          category: 'Bread',
+          unit: (p.unit?.toLowerCase() as any) || 'packet',
+          purchasePrice: Number(p.purchase_price || 0),
+          sellingPrice: Number(p.selling_price || 0),
+          godownStock: totalGodownQty,
+          reorderLevel: 50,
+          isActive: p.is_active !== false,
+          batches,
+        };
+      });
+      setProducts(mappedProducts);
+
+      // 2. Fetch Shops & Ledgers
+      const shopsRes = await shopsApi.getAll().catch(() => ({ shops: [] }));
+      const mappedShops: Shop[] = await Promise.all(
+        (shopsRes.shops || []).map(async (s: any) => {
+          let outstanding = 0;
+          try {
+            const ledgerRes = await shopsApi.getLedger(s.id);
+            outstanding = Number(ledgerRes.outstanding || 0);
+          } catch {
+            outstanding = 0;
+          }
+
+          return {
+            id: s.id,
+            name: s.shop_name,
+            owner: s.owner_name || '',
+            phone: s.phone || '',
+            address: s.address || '',
+            route: 'Town Route',
+            outstanding,
+            creditLimit: Number(s.credit_limit || 0),
+            totalSales: 0,
+            totalCollected: 0,
+            createdAt: s.created_at ? s.created_at.slice(0, 10) : '',
+          };
+        })
+      );
+      setShops(mappedShops);
+
+      // 3. Fetch Vehicles & Staff
+      const [vehiclesRes, staffRes] = await Promise.all([
+        vehiclesApi.getAll().catch(() => ({ vehicles: [] })),
+        staffApi.getAll().catch(() => ({ staff: [] })),
+      ]);
+
+      setVehicles(
+        (vehiclesRes.vehicles || []).map((v: any) => ({
+          id: v.id,
+          plateNumber: v.vehicle_number,
+          model: v.vehicle_name || 'Delivery Van',
+          capacityKg: 1000,
+          status: mapBackendVehicleStatus(v.status),
+        }))
+      );
+
+      setStaff(
+        (staffRes.staff || []).map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          role: mapBackendStaffRole(s.role),
+          phone: s.phone || '',
+          status: s.is_available ? 'Available' : 'On Trip',
+          isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
+        }))
+      );
+
+      // 4. Fetch Suppliers
+      const suppliersRes = await suppliersApi.getAll().catch(() => ({ suppliers: [] }));
+      setSuppliers(
+        (suppliersRes.suppliers || []).map((sup: any) => ({
+          id: sup.id,
+          name: sup.supplier_name,
+          contactPerson: sup.contact_person || '',
+          phone: sup.phone || '',
+          address: sup.address || '',
+          status: sup.is_active ? 'Active' : 'Inactive',
+          outstanding: 0,
+        }))
+      );
+
+      // 4b. Fetch Purchases
+      const purchasesRes = await purchasesApi.getAll().catch(() => ({ purchases: [] }));
+      const mappedPurchases: Purchase[] = (purchasesRes.purchases || []).flatMap((pur: any) => {
+        const items = pur.items || [];
+        if (items.length === 0) {
+          return [
+            {
+              id: pur.id,
+              invoiceNumber: pur.purchase_number,
+              supplierId: pur.supplier_id || '',
+              supplierName: pur.supplier_name || 'Supplier',
+              productId: '',
+              productName: 'Raw Materials',
+              batchNumber: 'Default',
+              quantity: 1,
+              unitCost: Number(pur.total_amount || 0),
+              total: Number(pur.total_amount || 0),
+              date: pur.purchase_date ? pur.purchase_date.slice(0, 10) : '',
+            },
+          ];
+        }
+        return items.map((it: any) => ({
+          id: `${pur.id}-${it.id}`,
+          invoiceNumber: pur.purchase_number,
+          supplierId: pur.supplier_id || '',
+          supplierName: pur.supplier_name || 'Supplier',
+          productId: it.product_id || '',
+          productName: it.product_name || 'Raw Material',
+          batchNumber: it.batch_id ? it.batch_id.slice(0, 8) : 'Default',
+          quantity: Number(it.quantity || 0),
+          unitCost: Number(it.unit_cost || 0),
+          total: Number(it.line_total || it.quantity * it.unit_cost || 0),
+          date: pur.purchase_date ? pur.purchase_date.slice(0, 10) : '',
+        }));
+      });
+      setPurchases(mappedPurchases);
+
+      // 5. Fetch Trips with details
+      const tripsRes = await tripsApi.getAll().catch(() => ({ trips: [] }));
+      const rawTrips = tripsRes.trips || [];
+
+      const detailedTrips: Trip[] = await Promise.all(
+        rawTrips.map(async (t: any) => {
+          // Fetch trip shops and trip stock
+          const [tShopsRes, tStockRes] = await Promise.all([
+            tripsApi.getShops(t.id).catch(() => ({ shops: [] })),
+            tripsApi.getStock(t.id).catch(() => ({ stock: [] })),
+          ]);
+
+          const tripShops = (tShopsRes.shops || []).map((ts: any) => ({
+            shopId: ts.shop_id,
+            shopName: ts.shop_name,
+            ownerName: ts.owner_name || '',
+            phone: ts.phone || '',
+            address: ts.address || '',
+            sequence: ts.visit_order || 1,
+            status: ts.visited_at ? ('completed' as const) : ('pending' as const),
+            visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+          }));
+
+          const loadedItems = (tStockRes.stock || []).map((st: any) => ({
+            productId: st.product_id,
+            productName: st.product_name,
+            unit: (st.unit || 'packet') as ProductUnit,
+            loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
+            soldQty: Number(st.sold_quantity || 0),
+            returnedQty: Number(st.returned_quantity || 0),
+            vanBalance: Number(st.van_balance !== undefined ? st.van_balance : 0),
+            unitPrice: Number(st.unit_price || 30),
+          }));
+
+          const tripDateStr = t.trip_date
+            ? new Date(t.trip_date).toISOString().slice(0, 10)
+            : '';
+
+          return {
+            id: t.id,
+            tripNumber: `TRP-${t.id.slice(0, 8).toUpperCase()}`,
+            date: tripDateStr,
+            startDate: tripDateStr,
+            vehicleId: t.vehicle_id,
+            vehiclePlate: t.vehicle_number || '',
+            driverId: t.driver_id || '',
+            driverName: t.driver_name || 'Driver',
+            staffId: t.sales_staff_id || '',
+            staffName: t.sales_staff_name || 'Sales Staff',
+            status: mapBackendTripStatus(t.status),
+            shops: tripShops,
+            loadedItems,
+            startedAt: t.started_at
+              ? new Date(t.started_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : undefined,
+            completedAt: t.completed_at
+              ? new Date(t.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : undefined,
+          };
+        })
+      );
+      setTrips(detailedTrips);
+
+      // 6. Fetch Sales, Payments & Returns
+      const [salesRes, paymentsRes, returnsRes] = await Promise.all([
+        salesApi.getAll().catch(() => ({ sales: [] })),
+        paymentsApi.getAll().catch(() => ({ payments: [] })),
+        returnsApi.getAll().catch(() => ({ returns: [] })),
+      ]);
+
+      const mappedSales: Sale[] = (salesRes.sales || []).map((s: any) => ({
+        id: s.id,
+        invoiceNumber: s.invoice_number,
+        tripId: s.trip_id,
+        shopId: s.shop_id,
+        shopName: s.shop_name || 'Shop',
+        items: (s.items || []).map((it: any) => ({
+          productId: it.product_id,
+          productName: it.product_name || 'Bakery Item',
+          unit: 'packet' as const,
+          quantity: Number(it.quantity || 0),
+          unitPrice: Number(it.unit_price || 0),
+          total: Number(it.line_total || 0),
+        })),
+        subtotal: Number(s.subtotal || 0),
+        discount: Number(s.discount || 0),
+        total: Number(s.total_amount || 0),
+        paidAmount: Number(s.total_amount || 0),
+        remainingDue: 0,
+        paymentMethod: 'Cash',
+        date: s.sale_date ? new Date(s.sale_date).toISOString().slice(0, 10) : '',
+        time: s.sale_date ? new Date(s.sale_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
+      }));
+      setSales(mappedSales);
+
+      const mappedPayments: Payment[] = (paymentsRes.payments || []).map((p: any) => {
+        let method: Payment['method'] = 'Cash';
+        if (p.payment_method === 'upi') method = 'UPI';
+        else if (p.payment_method === 'card') method = 'Card';
+        else if (p.payment_method === 'bank_transfer') method = 'Bank Transfer';
+
+        return {
+          id: p.id,
+          receiptNumber: `REC-${p.id.slice(0, 8).toUpperCase()}`,
+          shopId: p.shop_id,
+          shopName: p.shop_name || 'Shop',
+          saleId: p.sale_id,
+          amount: Number(p.amount || 0),
+          method,
+          date: p.payment_date ? new Date(p.payment_date).toISOString().slice(0, 10) : '',
+          reference: p.reference_number || undefined,
+        };
+      });
+      setPayments(mappedPayments);
+
+      const mappedReturns: ReturnItem[] = (returnsRes.returns || []).flatMap((r: any) =>
+        (r.items || []).map((it: any) => ({
+          id: it.id,
+          tripId: r.trip_id,
+          shopId: r.shop_id,
+          shopName: r.shop_name || 'Shop',
+          productId: it.product_id,
+          productName: it.product_name || 'Bakery Item',
+          unit: 'packet' as const,
+          quantity: Number(it.quantity || 0),
+          reason: (r.reason === 'damaged' ? 'Damaged' : r.reason === 'expired' ? 'Expired' : 'Shop Return') as any,
+          date: r.return_date ? new Date(r.return_date).toISOString().slice(0, 10) : '',
+          notes: r.notes || undefined,
+        }))
+      );
+      setReturns(mappedReturns);
+
+      // Check operational alerts dynamically from real stock and shops
+      const newAlerts: BusinessAlert[] = [];
+      const lowStockProducts = mappedProducts.filter(
+        (p) => p.godownStock <= p.reorderLevel && p.isActive
+      );
+      if (lowStockProducts.length > 0) {
+        newAlerts.push({
+          id: 'alt-low-stock',
+          type: 'low_stock',
+          title: `${lowStockProducts.length} products are low in stock`,
+          description: `${lowStockProducts.map((p) => p.name).slice(0, 3).join(', ')} need replenishment.`,
+          severity: 'warning',
+          linkTo: '/stock',
+        });
+      }
+
+      const overdueShops = mappedShops.filter((s) => s.outstanding > 0);
+      if (overdueShops.length > 0) {
+        const totalOverdue = overdueShops.reduce((sum, s) => sum + s.outstanding, 0);
+        newAlerts.push({
+          id: 'alt-outstanding',
+          type: 'outstanding',
+          title: `${overdueShops.length} shops have outstanding payments`,
+          description: `Total ₹${totalOverdue.toLocaleString('en-IN')} overdue across shops.`,
+          severity: 'danger',
+          linkTo: '/shops',
+        });
+      }
+
+      if (newAlerts.length === 0) {
+        setAlerts(initialAlerts);
+      } else {
+        setAlerts(newAlerts);
+      }
+    } catch (err: any) {
+      console.error('Error loading backend data:', err);
+      showToast('error', 'Data Sync Warning', err.message || 'Unable to sync some records.');
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, [showToast]);
+
+  // Initial load when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      refreshAllData();
+    }
+  }, [isAuthenticated, refreshAllData]);
+
+  // Today's summary calculations
+  const todayDateStr = useMemo(() => {
+    return new Date().toISOString().slice(0, 10);
+  }, []);
+
+  const todaySalesTotal = useMemo(() => {
+    return sales
+      .filter((s) => s.date === todayDateStr)
+      .reduce((acc, curr) => acc + curr.total, 0);
+  }, [sales, todayDateStr]);
+
+  const todayCollectionTotal = useMemo(() => {
+    return payments
+      .filter((p) => p.date === todayDateStr)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+  }, [payments, todayDateStr]);
+
+  const totalOutstanding = useMemo(() => {
+    return shops.reduce((acc, curr) => acc + (curr.outstanding || 0), 0);
+  }, [shops]);
+
+  const activeTripsCount = useMemo(() => {
+    return trips.filter((t) => t.status === 'In Progress' || t.status === 'Loaded').length;
+  }, [trips]);
+
+  const paymentBreakdown = useMemo(() => {
+    const todayPayments = payments.filter((p) => p.date === todayDateStr);
+    let cash = 0;
+    let upi = 0;
+    let card = 0;
+    let bankTransfer = 0;
+
+    todayPayments.forEach((p) => {
+      if (p.method === 'Cash') cash += p.amount;
+      else if (p.method === 'UPI') upi += p.amount;
+      else if (p.method === 'Card') card += p.amount;
+      else if (p.method === 'Bank Transfer') bankTransfer += p.amount;
+    });
+
+    return { cash, upi, card, bankTransfer };
+  }, [payments, todayDateStr]);
+
+  // =========================================================================
+  // ACTIONS CONNECTED TO REAL BACKEND
+  // =========================================================================
+
+  // 1. Create Trip
+  const createTrip = async (tripData: Omit<Trip, 'id' | 'tripNumber'>): Promise<Trip | null> => {
+    try {
+      // Map loaded items
+      const itemsPayload = tripData.loadedItems
+        .filter((item) => item.loadedQty > 0)
+        .map((item) => ({
+          product_id: item.productId,
+          quantity: item.loadedQty,
+        }));
+
+      // Map shops
+      const shopsPayload = tripData.shops
+        .filter((sh) => Boolean(sh.shopId))
+        .map((sh, index) => ({
+          shop_id: sh.shopId,
+          visit_order: sh.sequence || index + 1,
+        }));
+
+      // Create trip atomically on backend with all items and shops
+      const res = await tripsApi.create({
+        vehicle_id: tripData.vehicleId,
+        driver_id: tripData.driverId,
+        sales_staff_id: tripData.staffId,
+        trip_date: tripData.date,
+        items: itemsPayload,
+        shops: shopsPayload,
+      });
+
+      const newTripId = res.trip.id;
+
+      showToast('success', 'Trip Created', `Trip created and loaded successfully.`);
+      await refreshAllData();
+
+      const created = trips.find((t) => t.id === newTripId);
+      return created || {
+        ...tripData,
+        id: newTripId,
+        tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
+      };
+    } catch (err: any) {
+      console.error('Create trip error:', err);
+      const errorMsg =
+        err.response?.data?.message || err.message || 'Error communicating with backend.';
+      showToast('error', 'Failed to Create Trip', errorMsg);
+      return null;
+    }
+  };
+
+  // 2. Update Trip Status (including reconcile on Completed)
+  const updateTripStatus = async (tripId: string, status: TripStatus) => {
+    try {
+      if (status === 'Completed') {
+        await tripsApi.reconcile(tripId);
+        showToast('success', 'Trip Reconciled & Completed', 'Van stock returned to godown and vehicle released.');
+      } else if (status === 'In Progress') {
+        await tripsApi.start(tripId);
+        showToast('success', 'Trip Started', 'Vehicle route is now in progress.');
+      } else {
+        showToast('info', 'Status Updated', `Trip marked as ${status}`);
+      }
+      await refreshAllData();
+    } catch (err: any) {
+      console.error('Update trip status error:', err);
+      showToast('error', 'Status Update Failed', err.message || 'Error communicating with backend.');
+    }
+  };
+
+  // Mark Shop Visited on Trip
+  const markShopVisited = async (tripId: string, shopId: string) => {
+    try {
+      await tripsApi.markShopVisited(tripId, shopId);
+      showToast('success', 'Shop Visited', 'Shop marked as visited.');
+      await refreshAllData();
+    } catch (err: any) {
+      console.error('Mark shop visited error:', err);
+      showToast('error', 'Update Failed', err.message || 'Error communicating with backend.');
+    }
+  };
+
+  // 3. Record Sale
+  const recordSale = async (
+    saleData: Omit<Sale, 'id' | 'invoiceNumber' | 'date' | 'time'>
+  ): Promise<Sale | null> => {
+    try {
+      const activeTripId = saleData.tripId || trips.find((t) => t.status === 'In Progress' || t.status === 'Loaded')?.id;
+
+      if (!activeTripId) {
+        showToast('error', 'No Active Trip', 'Sales must be recorded during an active trip.');
+        return null;
+      }
+
+      // Ensure shop is assigned to trip
+      await tripsApi.addShop(activeTripId, { shop_id: saleData.shopId }).catch(() => {});
+
+      // Fetch current trip stock to map batch_id
+      let tripStockList: any[] = [];
+      try {
+        const sRes = await tripsApi.getStock(activeTripId);
+        tripStockList = sRes.stock || [];
+      } catch {
+        tripStockList = [];
+      }
+
+      const itemsForBackend = await Promise.all(
+        saleData.items.map(async (item) => {
+          // Find batch in trip stock
+          const matchInTrip = tripStockList.find((ts) => ts.product_id === item.productId);
+          let batchId = matchInTrip?.batch_id;
+
+          if (!batchId) {
+            // Check batches API
+            const bRes = await batchesApi.getByProduct(item.productId).catch(() => ({ batches: [] }));
+            batchId = bRes.batches[0]?.id;
+          }
+
+          return {
+            product_id: item.productId,
+            batch_id: batchId || '00000000-0000-0000-0000-000000000000',
+            quantity: item.quantity,
+            unit_price: item.unitPrice,
+            discount: 0,
+          };
+        })
+      );
+
+      const saleRes = await salesApi.create({
+        trip_id: activeTripId,
+        shop_id: saleData.shopId,
+        items: itemsForBackend,
+        discount: saleData.discount,
+        notes: `Recorded via Web UI`,
+        idempotency_key: saleData.idempotencyKey,
+      });
+
+      // If immediate payment was made (cash / upi / card / partial), record payment
+      if (saleData.paidAmount > 0 && saleData.paymentMethod !== 'Due') {
+        const payMethod =
+          saleData.paymentMethod === 'Partial'
+            ? 'cash'
+            : (saleData.paymentMethod.toLowerCase().replace(' ', '_') as any);
+
+        await paymentsApi.create({
+          shop_id: saleData.shopId,
+          sale_id: saleRes.sale.id,
+          payment_method: payMethod,
+          amount: saleData.paidAmount,
+          notes: `Instant payment for invoice ${saleRes.sale.invoice_number}`,
+          idempotency_key: saleData.idempotencyKey ? `pay-${saleData.idempotencyKey}` : undefined,
+        }).catch((err) => console.warn('Auto payment recording warning:', err));
+      }
+
+      showToast('success', 'Sale Recorded', `Invoice #${saleRes.sale.invoice_number} saved.`);
+      await refreshAllData();
+      return null;
+    } catch (err: any) {
+      console.error('Record sale error:', err);
+      showToast('error', 'Sale Failed', err.message || 'Error recording sale.');
+      return null;
+    }
+  };
+
+  // 4. Receive Payment
+  const receivePayment = async (
+    paymentData: Omit<Payment, 'id' | 'receiptNumber' | 'date'> & { idempotencyKey?: string }
+  ): Promise<Payment | null> => {
+    try {
+      const backendMethod = paymentData.method.toLowerCase().replace(' ', '_') as any;
+
+      const idempotencyKey =
+        paymentData.idempotencyKey ||
+        (typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `pay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+
+      const res = await paymentsApi.create({
+        shop_id: paymentData.shopId,
+        sale_id: paymentData.saleId,
+        payment_method: backendMethod,
+        amount: paymentData.amount,
+        reference_number: paymentData.reference,
+        notes: paymentData.notes,
+        idempotency_key: idempotencyKey,
+      });
+
+      if (res.is_duplicate) {
+        showToast('info', 'Payment Already Processed', `Payment of ₹${paymentData.amount.toLocaleString('en-IN')} was already recorded.`);
+      } else {
+        showToast('success', 'Payment Received', `Collected ₹${paymentData.amount.toLocaleString('en-IN')}.`);
+      }
+      await refreshAllData();
+      return null;
+    } catch (err: any) {
+      console.error('Receive payment error:', err);
+      showToast('error', 'Payment Failed', err.message || 'Error recording payment.');
+      throw err;
+    }
+  };
+
+  // 5. Record Return
+  const recordReturn = async (
+    returnData: Omit<ReturnItem, 'id' | 'date'>
+  ): Promise<ReturnItem | null> => {
+    try {
+      const activeTripId = returnData.tripId || trips.find((t) => t.status === 'In Progress' || t.status === 'Loaded')?.id;
+
+      if (!activeTripId) {
+        showToast('error', 'No Active Trip', 'Returns must be attached to an active trip.');
+        return null;
+      }
+
+      const bRes = await batchesApi.getByProduct(returnData.productId).catch(() => ({ batches: [] }));
+      const batchId = bRes.batches[0]?.id || '00000000-0000-0000-0000-000000000000';
+
+      let reasonCode: 'shop_return' | 'damaged' | 'expired' = 'shop_return';
+      if (returnData.reason === 'Damaged') reasonCode = 'damaged';
+      else if (returnData.reason === 'Expired') reasonCode = 'expired';
+
+      // Ensure shop is attached to trip
+      await tripsApi.addShop(activeTripId, { shop_id: returnData.shopId }).catch(() => {});
+
+      await returnsApi.create({
+        trip_id: activeTripId,
+        shop_id: returnData.shopId,
+        reason: reasonCode,
+        items: [
+          {
+            product_id: returnData.productId,
+            batch_id: batchId,
+            quantity: returnData.quantity,
+            unit_price: returnData.unitPrice,
+          },
+        ],
+        notes: returnData.notes,
+        idempotency_key: returnData.idempotencyKey,
+      });
+
+      showToast('success', 'Return Recorded', `${returnData.quantity} ${returnData.unit} returned.`);
+      await refreshAllData();
+      return null;
+    } catch (err: any) {
+      console.error('Record return error:', err);
+      showToast('error', 'Return Failed', err.message || 'Error recording return.');
+      return null;
+    }
+  };
+
+  // 6. Products CRUD
+  const addProduct = async (prodData: Omit<Product, 'id'>) => {
+    try {
+      await productsApi.create({
+        product_name: prodData.name,
+        sku: prodData.sku,
+        unit: prodData.unit,
+        purchase_price: prodData.purchasePrice,
+        selling_price: prodData.sellingPrice,
+      });
+      showToast('success', 'Product Added', `${prodData.name} saved to catalog.`);
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Failed to Add Product', err.message);
+    }
+  };
+
+  const updateProduct = async (id: string, updated: Partial<Product>) => {
+    try {
+      await productsApi.update(id, {
+        product_name: updated.name,
+        sku: updated.sku,
+        unit: updated.unit,
+        purchase_price: updated.purchasePrice,
+        selling_price: updated.sellingPrice,
+        is_active: updated.isActive,
+      });
+      showToast('info', 'Product Updated', 'Product details saved.');
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Update Failed', err.message);
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    try {
+      await productsApi.delete(id);
+      showToast('info', 'Product Deleted', 'Product permanently removed.');
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Delete Failed', err.message);
+    }
+  };
+
+  const archiveProduct = async (id: string) => {
+    await updateProduct(id, { isActive: false });
+  };
+
+  const isProductInUse = (id: string): boolean => {
+    return (
+      sales.some((s) => s.items?.some((it) => it.productId === id)) ||
+      purchases.some((p) => p.productId === id) ||
+      trips.some((t) => t.loadedItems?.some((li) => li.productId === id))
+    );
+  };
+
+  // 7. Shop CRUD
+  const addShop = async (shopData: Omit<Shop, 'id' | 'totalSales' | 'totalCollected' | 'createdAt'>) => {
+    try {
+      await shopsApi.create({
+        shop_name: shopData.name,
+        owner_name: shopData.owner,
+        phone: shopData.phone,
+        address: shopData.address,
+        credit_limit: shopData.creditLimit,
+      });
+      showToast('success', 'Shop Added', `${shopData.name} registered.`);
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Failed to Add Shop', err.message);
+    }
+  };
+
+  const updateShop = (id: string, updated: Partial<Shop>) => {
+    setShops((prev) => prev.map((s) => (s.id === id ? { ...s, ...updated } : s)));
+    showToast('info', 'Shop Updated', 'Shop details saved.');
+  };
+
+  // 8. Vehicle CRUD
+  const addVehicle = async (vehData: Omit<Vehicle, 'id'>) => {
+    try {
+      await vehiclesApi.create({
+        vehicle_number: vehData.plateNumber,
+        vehicle_name: vehData.model,
+      });
+      showToast('success', 'Vehicle Added', `${vehData.plateNumber} added to fleet.`);
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Failed to Add Vehicle', err.message);
+    }
+  };
+
+  const updateVehicle = (id: string, updated: Partial<Vehicle>) => {
+    setVehicles((prev) => prev.map((v) => (v.id === id ? { ...v, ...updated } : v)));
+  };
+
+  // 9. Staff CRUD
+  const addStaff = async (staffData: Omit<Staff, 'id'>) => {
+    try {
+      await staffApi.create({
+        name: staffData.name,
+        phone: staffData.phone,
+        role: mapStaffRoleToBackend(staffData.role),
+      });
+      showToast('success', 'Staff Member Added', `${staffData.name} registered.`);
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Failed to Add Staff', err.message);
+    }
+  };
+
+  const updateStaff = (id: string, updated: Partial<Staff>) => {
+    setStaff((prev) => prev.map((s) => (s.id === id ? { ...s, ...updated } : s)));
+  };
+
+  const archiveStaff = async (id: string) => {
+    try {
+      await staffApi.delete(id);
+      showToast('info', 'Staff Removed', 'Staff member has been archived/deactivated.');
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Remove Failed', err.message);
+    }
+  };
+
+  const deleteStaff = async (id: string) => {
+    try {
+      await staffApi.delete(id);
+      showToast('info', 'Staff Removed', 'Staff member removed successfully.');
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Remove Failed', err.message);
+    }
+  };
+
+  const isStaffInUse = (id: string): boolean => {
+    return trips.some((t) => t.driverId === id || t.staffId === id);
+  };
+
+  // 10. Suppliers CRUD
+  const addSupplier = async (supData: Omit<Supplier, 'id'>) => {
+    try {
+      await suppliersApi.create({
+        supplier_name: supData.name,
+        contact_person: supData.contactPerson,
+        phone: supData.phone,
+        address: supData.address,
+      });
+      showToast('success', 'Supplier Added', `${supData.name} registered.`);
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Failed to Add Supplier', err.message);
+    }
+  };
+
+  const updateSupplier = (id: string, updated: Partial<Supplier>) => {
+    setSuppliers((prev) => prev.map((s) => (s.id === id ? { ...s, ...updated } : s)));
+  };
+
+  const archiveSupplier = (id: string) => {
+    setSuppliers((prev) => prev.map((s) => (s.id === id ? { ...s, status: 'Inactive' } : s)));
+  };
+
+  const deleteSupplier = (id: string) => {
+    setSuppliers((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const isSupplierInUse = (id: string): boolean => {
+    return purchases.some((p) => p.supplierId === id);
+  };
+
+  // 11. Purchases
+  const addPurchase = async (purData: Omit<Purchase, 'id' | 'invoiceNumber' | 'date'>) => {
+    try {
+      // Find or create batch
+      let batchId: string | undefined;
+      try {
+        const bRes = await batchesApi.getByProduct(purData.productId);
+        if (bRes.batches && bRes.batches.length > 0) {
+          batchId = bRes.batches[0].id;
+        } else {
+          const newB = await batchesApi.create({
+            product_id: purData.productId,
+            batch_number: purData.batchNumber || `B-${Date.now().toString().slice(-4)}`,
+          });
+          batchId = newB.batch.id;
+        }
+      } catch {
+        // fallback
+      }
+
+      if (!batchId) {
+        throw new Error('Unable to assign batch for purchase.');
+      }
+
+      await purchasesApi.create({
+        supplier_id: purData.supplierId,
+        items: [
+          {
+            product_id: purData.productId,
+            batch_id: batchId,
+            quantity: purData.quantity,
+            unit_cost: purData.unitCost,
+          },
+        ],
+      });
+
+      showToast('success', 'Purchase Saved', `Added ${purData.quantity} units to godown stock.`);
+      await refreshAllData();
+    } catch (err: any) {
+      showToast('error', 'Purchase Failed', err.message);
+    }
+  };
+
+  // 12. Expenses
+  const addExpense = (expData: Omit<Expense, 'id' | 'date'>) => {
+    const id = `exp-${Date.now()}`;
+    setExpenses((prev) => [{ ...expData, id, date: todayDateStr }, ...prev]);
+    showToast('success', 'Expense Recorded', `₹${expData.amount.toLocaleString('en-IN')} for ${expData.category}.`);
+  };
+
+  // 13. Shop Ledger
+  const getShopLedger = (shopId: string): ShopLedgerEntry[] => {
+    const shopSales = sales.filter((s) => s.shopId === shopId);
+    const shopPayments = payments.filter((p) => p.shopId === shopId);
+
+    type RawEvent =
+      | { type: 'Sale'; date: string; ref: string; desc: string; amount: number }
+      | { type: 'Payment'; date: string; ref: string; desc: string; amount: number };
+
+    const events: RawEvent[] = [];
+
+    shopSales.forEach((s) => {
+      events.push({
+        type: 'Sale',
+        date: s.date,
+        ref: s.invoiceNumber,
+        desc: `Bakery Goods Invoice (${s.items.length} items)`,
+        amount: s.total,
+      });
+    });
+
+    shopPayments.forEach((p) => {
+      events.push({
+        type: 'Payment',
+        date: p.date,
+        ref: p.receiptNumber,
+        desc: `Payment Received via ${p.method}`,
+        amount: p.amount,
+      });
+    });
+
+    events.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let runningBalance = 0;
+    return events.map((ev, index) => {
+      let debit = 0;
+      let credit = 0;
+
+      if (ev.type === 'Sale') {
+        debit = ev.amount;
+        runningBalance += debit;
+      } else {
+        credit = ev.amount;
+        runningBalance = Math.max(0, runningBalance - credit);
+      }
+
+      return {
+        id: `ledger-${shopId}-${index}`,
+        date: ev.date,
+        type: ev.type,
+        reference: ev.ref,
+        description: ev.desc,
+        debit,
+        credit,
+        balance: runningBalance,
+      };
+    });
+  };
+
+  const resetToDemoData = () => {
+    refreshAllData();
+    showToast('info', 'Data Refreshed', 'Records reloaded from PostgreSQL backend.');
+  };
+
+  return (
+    <BakeryContext.Provider
+      value={{
+        isAuthenticated,
+        isLoadingData,
+        currentUser,
+        login,
+        logout,
+        refreshAllData,
+        products,
+        shops,
+        vehicles,
+        staff,
+        trips,
+        sales,
+        payments,
+        returns,
+        expenses,
+        suppliers,
+        purchases,
+        alerts,
+        toasts,
+        showToast,
+        removeToast,
+        todaySalesTotal,
+        todayCollectionTotal,
+        totalOutstanding,
+        activeTripsCount,
+        paymentBreakdown,
+        createTrip,
+        updateTripStatus,
+        markShopVisited,
+        recordSale,
+        receivePayment,
+        recordReturn,
+        addProduct,
+        updateProduct,
+        archiveProduct,
+        deleteProduct,
+        isProductInUse,
+        addShop,
+        updateShop,
+        addVehicle,
+        updateVehicle,
+        addStaff,
+        updateStaff,
+        archiveStaff,
+        deleteStaff,
+        isStaffInUse,
+        addExpense,
+        addPurchase,
+        addSupplier,
+        updateSupplier,
+        archiveSupplier,
+        deleteSupplier,
+        isSupplierInUse,
+        getShopLedger,
+        resetToDemoData,
+      }}
+    >
+      {children}
+    </BakeryContext.Provider>
+  );
+};
+
+export const useBakery = (): BakeryContextType => {
+  const context = useContext(BakeryContext);
+  if (!context) {
+    throw new Error('useBakery must be used within a BakeryProvider');
+  }
+  return context;
+};

@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { TripStatusBadge } from '../components/ui/Badge';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
+import { Modal } from '../components/ui/Modal';
 import {
   ArrowLeft,
   Truck,
@@ -19,8 +20,9 @@ import {
   Layers,
   Sparkles,
   Check,
+  AlertTriangle,
 } from 'lucide-react';
-import { TripStatus } from '../types';
+import { TripStatus, TripLoadedItem } from '../types';
 
 interface TripDetailPageProps {
   tripId: string;
@@ -33,9 +35,17 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   onBack,
   onOpenShopVisit,
 }) => {
-  const { trips, updateTripStatus, markShopVisited, sales, payments, returns } = useBakery();
+  const { trips, updateTripStatus, markShopVisited, sales, payments, returns, recordTransitDamage } = useBakery();
   const [activeTab, setActiveTab] = useState<'shops' | 'stock'>('shops');
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+
+  // Transit Damage Modal state
+  const [isDamageModalOpen, setIsDamageModalOpen] = useState(false);
+  const [damageProductId, setDamageProductId] = useState('');
+  const [damageQty, setDamageQty] = useState('');
+  const [damageNotes, setDamageNotes] = useState('');
+  const [isSubmittingDamage, setIsSubmittingDamage] = useState(false);
+  const [damageError, setDamageError] = useState('');
 
   const trip = trips.find((t) => t.id === tripId);
 
@@ -69,16 +79,53 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   const tripReturns = returns.filter((r) => r.tripId === trip.id);
   const tripReturnsTotal = tripReturns.reduce((sum, r) => sum + r.quantity * 30, 0); // approximate value
 
+  const getVanBalance = (item: TripLoadedItem) => {
+    if (trip.status === 'Completed') return 0;
+    if (item.vanBalance !== undefined) return item.vanBalance;
+    return Math.max(0, item.loadedQty - item.soldQty - (item.damagedQty || 0) + item.returnedQty);
+  };
+
   const remainingVanStockUnits = trip.loadedItems.reduce(
-    (sum, item) =>
-      sum +
-      (trip.status === 'Completed'
-        ? 0
-        : (item.vanBalance !== undefined
-            ? item.vanBalance
-            : Math.max(0, item.loadedQty - item.soldQty + item.returnedQty))),
+    (sum, item) => sum + getVanBalance(item),
     0
   );
+
+  const handleRecordDamage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!damageProductId) {
+      setDamageError('Please select a product');
+      return;
+    }
+    const qty = Number(damageQty);
+    if (isNaN(qty) || qty <= 0) {
+      setDamageError('Quantity must be greater than 0');
+      return;
+    }
+    const selectedItem = trip.loadedItems.find((i) => i.productId === damageProductId);
+    const available = selectedItem ? getVanBalance(selectedItem) : 0;
+    if (qty > available) {
+      setDamageError(`Quantity cannot exceed available stock (${available} ${selectedItem?.unit || 'units'})`);
+      return;
+    }
+
+    setIsSubmittingDamage(true);
+    setDamageError('');
+    try {
+      const success = await recordTransitDamage(trip.id, {
+        product_id: damageProductId,
+        quantity: qty,
+        notes: damageNotes.trim() || undefined,
+        idempotency_key: crypto.randomUUID(),
+      });
+      if (success) {
+        setIsDamageModalOpen(false);
+        setDamageQty('');
+        setDamageNotes('');
+      }
+    } finally {
+      setIsSubmittingDamage(false);
+    }
+  };
 
   const handleStatusTransition = () => {
     if (trip.status === 'Draft') {
@@ -479,15 +526,34 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
       {/* Tab 2: Van Stock Reconciliation */}
       {activeTab === 'stock' && (
         <>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Van Inventory & Reconciliation</h3>
+              <p className="text-xs text-slate-500">Live vehicle stock during route</p>
+            </div>
+            {trip.status === 'In Progress' && (
+              <Button
+                variant="secondary"
+                size="sm"
+                leftIcon={<AlertTriangle className="w-3.5 h-3.5 text-rose-500" />}
+                onClick={() => {
+                  setDamageProductId(trip.loadedItems[0]?.productId || '');
+                  setDamageQty('');
+                  setDamageNotes('');
+                  setDamageError('');
+                  setIsDamageModalOpen(true);
+                }}
+                className="text-rose-700 border-rose-200 hover:bg-rose-50"
+              >
+                Record Damage
+              </Button>
+            )}
+          </div>
+
           {/* MOBILE VAN STOCK CARDS */}
           <div className="md:hidden space-y-2.5">
             {trip.loadedItems.map((item) => {
-              const balanceInVan =
-                trip.status === 'Completed'
-                  ? 0
-                  : (item.vanBalance !== undefined
-                      ? item.vanBalance
-                      : Math.max(0, item.loadedQty - item.soldQty + item.returnedQty));
+              const balanceInVan = getVanBalance(item);
               return (
                 <Card key={item.productId} className="p-3.5 border-slate-200 bg-white shadow-2xs">
                   <div className="flex items-start justify-between gap-2">
@@ -503,7 +569,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                     </div>
                   </div>
 
-                  <div className="mt-3 pt-2.5 border-t border-slate-100 grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="mt-3 pt-2.5 border-t border-slate-100 grid grid-cols-4 gap-1.5 text-center text-xs">
                     <div className="bg-slate-50 p-1.5 rounded-lg border border-slate-100">
                       <span className="text-[10px] text-slate-400 block">Loaded</span>
                       <span className="font-bold text-slate-800">{item.loadedQty}</span>
@@ -511,6 +577,10 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                     <div className="bg-emerald-50/60 p-1.5 rounded-lg border border-emerald-100">
                       <span className="text-[10px] text-emerald-600 block">Sold</span>
                       <span className="font-bold text-emerald-700">{item.soldQty}</span>
+                    </div>
+                    <div className="bg-rose-50/60 p-1.5 rounded-lg border border-rose-100">
+                      <span className="text-[10px] text-rose-600 block">Damaged</span>
+                      <span className="font-bold text-rose-700">{item.damagedQty || 0}</span>
                     </div>
                     <div className="bg-amber-50/60 p-1.5 rounded-lg border border-amber-100">
                       <span className="text-[10px] text-amber-600 block">Returned</span>
@@ -531,6 +601,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                     <th className="py-3 px-4">Product Name</th>
                     <th className="py-3 px-3 text-center">Loaded</th>
                     <th className="py-3 px-3 text-center">Sold</th>
+                    <th className="py-3 px-3 text-center">Damaged</th>
                     <th className="py-3 px-3 text-center">Returned</th>
                     <th className="py-3 px-3 text-center">Balance in Van</th>
                     <th className="py-3 px-4 text-right">Unit Price</th>
@@ -538,12 +609,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {trip.loadedItems.map((item) => {
-                    const balanceInVan =
-                      trip.status === 'Completed'
-                        ? 0
-                        : (item.vanBalance !== undefined
-                            ? item.vanBalance
-                            : Math.max(0, item.loadedQty - item.soldQty + item.returnedQty));
+                    const balanceInVan = getVanBalance(item);
                     return (
                       <tr key={item.productId} className="hover:bg-slate-50/60">
                         <td className="py-3 px-4 font-semibold text-slate-900">
@@ -554,6 +620,9 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                         </td>
                         <td className="py-3 px-3 text-center font-bold text-emerald-600">
                           {item.soldQty} {item.unit}
+                        </td>
+                        <td className="py-3 px-3 text-center font-bold text-rose-600">
+                          {item.damagedQty || 0} {item.unit}
                         </td>
                         <td className="py-3 px-3 text-center font-bold text-amber-600">
                           {item.returnedQty} {item.unit}
@@ -641,6 +710,112 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
         confirmText={allCompleted ? 'Complete Trip' : 'Complete with Pending Shops'}
         variant={allCompleted ? 'primary' : 'danger'}
       />
+
+      {/* Record Transit Damage Modal */}
+      <Modal
+        isOpen={isDamageModalOpen}
+        onClose={() => {
+          if (!isSubmittingDamage) {
+            setIsDamageModalOpen(false);
+            setDamageError('');
+          }
+        }}
+        title="Record Transit Damage"
+        description="Deduct goods damaged in transit from active vehicle stock."
+      >
+        <form onSubmit={handleRecordDamage} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Select Product
+            </label>
+            <select
+              value={damageProductId}
+              onChange={(e) => {
+                setDamageProductId(e.target.value);
+                setDamageError('');
+              }}
+              className="w-full text-sm rounded-lg border border-slate-300 bg-white p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">-- Choose Product --</option>
+              {trip.loadedItems.map((item) => {
+                const available = getVanBalance(item);
+                return (
+                  <option key={item.productId} value={item.productId}>
+                    {item.productName} (Available: {available} {item.unit})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Damaged Quantity
+            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={damageQty}
+              onChange={(e) => {
+                setDamageQty(e.target.value);
+                setDamageError('');
+              }}
+              placeholder="e.g. 2"
+              className="w-full text-sm rounded-lg border border-slate-300 p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            {damageProductId && (
+              <p className="mt-1 text-xs text-slate-500">
+                Max available:{' '}
+                {getVanBalance(
+                  trip.loadedItems.find((i) => i.productId === damageProductId) || trip.loadedItems[0]
+                )}{' '}
+                units
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 mb-1">
+              Notes (Optional)
+            </label>
+            <input
+              type="text"
+              value={damageNotes}
+              onChange={(e) => setDamageNotes(e.target.value)}
+              placeholder="e.g. Packaging crushed during transit"
+              className="w-full text-sm rounded-lg border border-slate-300 p-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          {damageError && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700 font-medium">
+              {damageError}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={isSubmittingDamage}
+              onClick={() => setIsDamageModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              disabled={isSubmittingDamage || !damageProductId || !damageQty}
+              className="bg-rose-600 hover:bg-rose-700 border-rose-600 text-white"
+            >
+              {isSubmittingDamage ? 'Recording...' : 'Confirm Damage'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 };

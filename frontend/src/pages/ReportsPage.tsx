@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useBakery } from '../context/BakeryContext';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Tabs } from '../components/ui/Tabs';
 import { PaymentMethodBadge } from '../components/ui/Badge';
-import { SalesTrendChart } from '../components/charts/SalesTrendChart';
+import { SalesTrendChart, DayData } from '../components/charts/SalesTrendChart';
 import { PaymentBreakdownChart } from '../components/charts/PaymentBreakdownChart';
-import { TopProductsChart } from '../components/charts/TopProductsChart';
+import { TopProductsChart, TopProductItem } from '../components/charts/TopProductsChart';
 import {
   BarChart3,
   Download,
@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
-  const { sales, payments, shops, products, trips, returns, paymentBreakdown } = useBakery();
+  const { sales, payments, shops, products, trips, returns } = useBakery();
   const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month'>('today');
   const [reportType, setReportType] = useState<
     'sales' | 'collection' | 'outstanding' | 'product' | 'trip'
@@ -34,9 +34,150 @@ export const ReportsPage: React.FC = () => {
     { id: 'trip', label: 'Trip Report' },
   ];
 
+  // Helper date boundaries
+  const { todayStr, weekStartStr, monthStartStr } = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
+    // Current week starting from Monday (or past 7 days)
+    const dayOfWeek = now.getDay(); // 0 is Sunday, 1 is Monday...
+    const diffToMon = (dayOfWeek + 6) % 7;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diffToMon);
+    const weekStartStr = monday.toISOString().slice(0, 10);
+
+    // First of current month
+    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStartStr = firstOfMonth.toISOString().slice(0, 10);
+
+    return { todayStr, weekStartStr, monthStartStr };
+  }, []);
+
+  // Filtered Sales according to selected time filter
+  const filteredSales = useMemo(() => {
+    return sales.filter((s) => {
+      const saleDate = s.date;
+      if (!saleDate) return false;
+      if (timeFilter === 'today') return saleDate === todayStr;
+      if (timeFilter === 'week') return saleDate >= weekStartStr && saleDate <= todayStr;
+      if (timeFilter === 'month') return saleDate >= monthStartStr && saleDate <= todayStr;
+      return true;
+    });
+  }, [sales, timeFilter, todayStr, weekStartStr, monthStartStr]);
+
+  // Filtered Payments according to selected time filter
+  const filteredPayments = useMemo(() => {
+    return payments.filter((p) => {
+      const pDate = p.date;
+      if (!pDate) return false;
+      if (timeFilter === 'today') return pDate === todayStr;
+      if (timeFilter === 'week') return pDate >= weekStartStr && pDate <= todayStr;
+      if (timeFilter === 'month') return pDate >= monthStartStr && pDate <= todayStr;
+      return true;
+    });
+  }, [payments, timeFilter, todayStr, weekStartStr, monthStartStr]);
+
+  // Filtered Trips according to selected time filter
+  const filteredTrips = useMemo(() => {
+    return trips.filter((t) => {
+      const tDate = t.date;
+      if (!tDate) return false;
+      if (timeFilter === 'today') return tDate === todayStr;
+      if (timeFilter === 'week') return tDate >= weekStartStr && tDate <= todayStr;
+      if (timeFilter === 'month') return tDate >= monthStartStr && tDate <= todayStr;
+      return true;
+    });
+  }, [trips, timeFilter, todayStr, weekStartStr, monthStartStr]);
+
+  // Filtered Returns according to selected time filter
+  const filteredReturns = useMemo(() => {
+    return returns.filter((r) => {
+      const rDate = r.date;
+      if (!rDate) return false;
+      if (timeFilter === 'today') return rDate === todayStr;
+      if (timeFilter === 'week') return rDate >= weekStartStr && rDate <= todayStr;
+      if (timeFilter === 'month') return rDate >= monthStartStr && rDate <= todayStr;
+      return true;
+    });
+  }, [returns, timeFilter, todayStr, weekStartStr, monthStartStr]);
+
+  // Payment Breakdown calculated from filtered payments
+  const filteredPaymentBreakdown = useMemo(() => {
+    let cash = 0;
+    let upi = 0;
+    let card = 0;
+    let bankTransfer = 0;
+
+    filteredPayments.forEach((p) => {
+      if (p.method === 'Cash') cash += p.amount;
+      else if (p.method === 'UPI') upi += p.amount;
+      else if (p.method === 'Card') card += p.amount;
+      else if (p.method === 'Bank Transfer') bankTransfer += p.amount;
+    });
+
+    return { cash, upi, card, bankTransfer };
+  }, [filteredPayments]);
+
+  // Real 7-day Sales Trend Data calculated from actual sales
+  const salesTrendData: DayData[] = useMemo(() => {
+    const days: DayData[] = [];
+    const now = new Date();
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const dateStr = d.toISOString().slice(0, 10);
+      const dayLabel = i === 0 ? 'Today' : d.toLocaleDateString('en-US', { weekday: 'short' });
+      const displayDate = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+
+      const daySalesTotal = sales
+        .filter((s) => s.date === dateStr)
+        .reduce((sum, s) => sum + s.total, 0);
+
+      days.push({
+        day: dayLabel,
+        date: displayDate,
+        sales: daySalesTotal,
+      });
+    }
+
+    return days;
+  }, [sales]);
+
+  // Real Top Products calculated from filtered sales data
+  const realTopProducts: TopProductItem[] = useMemo(() => {
+    const productMap = new Map<string, { name: string; unit: string; quantitySold: number; revenue: number }>();
+
+    filteredSales.forEach((sale) => {
+      sale.items.forEach((item) => {
+        const existing = productMap.get(item.productId) || {
+          name: item.productName || 'Bakery Product',
+          unit: item.unit || 'packets',
+          quantitySold: 0,
+          revenue: 0,
+        };
+        existing.quantitySold += item.quantity;
+        existing.revenue += item.total;
+        productMap.set(item.productId, existing);
+      });
+    });
+
+    const list: TopProductItem[] = Array.from(productMap.entries()).map(([id, data]) => ({
+      id,
+      name: data.name,
+      unit: data.unit,
+      quantitySold: data.quantitySold,
+      revenue: data.revenue,
+    }));
+
+    // Sort by quantitySold descending
+    list.sort((a, b) => b.quantitySold - a.quantitySold);
+    return list.slice(0, 10);
+  }, [filteredSales]);
+
   // Sales computations
-  const totalSales = sales.reduce((sum, s) => sum + s.total, 0);
-  const numSales = sales.length;
+  const totalSales = filteredSales.reduce((sum, s) => sum + s.total, 0);
+  const numSales = filteredSales.length;
   const avgSale = numSales > 0 ? Math.round(totalSales / numSales) : 0;
 
   // Outstanding computations
@@ -44,16 +185,15 @@ export const ReportsPage: React.FC = () => {
   const totalDue = shopsWithOutstanding.reduce((sum, s) => sum + s.outstanding, 0);
 
   // Trips computations
-  const completedTrips = trips.filter((t) => t.status === 'Completed' || t.status === 'In Progress');
-  const totalVisitedShops = trips.reduce(
+  const totalVisitedShops = filteredTrips.reduce(
     (sum, t) => sum + t.shops.filter((s) => s.status === 'completed').length,
     0
   );
-  const totalUnitsDelivered = trips.reduce(
+  const totalUnitsDelivered = filteredTrips.reduce(
     (sum, t) => sum + t.loadedItems.reduce((acc, li) => acc + li.soldQty, 0),
     0
   );
-  const totalReturnsCount = returns.reduce((sum, r) => sum + r.quantity, 0);
+  const totalReturnsCount = filteredReturns.reduce((sum, r) => sum + r.quantity, 0);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
@@ -130,7 +270,7 @@ export const ReportsPage: React.FC = () => {
             <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
               <CardTitle>Daily Sales Curve</CardTitle>
             </CardHeader>
-            <SalesTrendChart todaySales={totalSales} />
+            <SalesTrendChart data={salesTrendData} todaySales={totalSales} />
           </Card>
         </div>
       )}
@@ -143,7 +283,7 @@ export const ReportsPage: React.FC = () => {
               <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
                 <CardTitle>Payment Instrument Distribution</CardTitle>
               </CardHeader>
-              <PaymentBreakdownChart breakdown={paymentBreakdown} />
+              <PaymentBreakdownChart breakdown={filteredPaymentBreakdown} />
             </Card>
 
             <Card className="p-5 border-slate-200">
@@ -153,19 +293,19 @@ export const ReportsPage: React.FC = () => {
               <div className="space-y-3 text-xs">
                 <div className="flex justify-between p-3 rounded-lg bg-emerald-50 text-emerald-900 font-semibold">
                   <span>Cash in Hand:</span>
-                  <span>₹{paymentBreakdown.cash.toLocaleString('en-IN')}</span>
+                  <span>₹{filteredPaymentBreakdown.cash.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex justify-between p-3 rounded-lg bg-blue-50 text-blue-900 font-semibold">
                   <span>UPI / QR Digital:</span>
-                  <span>₹{paymentBreakdown.upi.toLocaleString('en-IN')}</span>
+                  <span>₹{filteredPaymentBreakdown.upi.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex justify-between p-3 rounded-lg bg-amber-50 text-amber-900 font-semibold">
                   <span>Card POS:</span>
-                  <span>₹{paymentBreakdown.card.toLocaleString('en-IN')}</span>
+                  <span>₹{filteredPaymentBreakdown.card.toLocaleString('en-IN')}</span>
                 </div>
                 <div className="flex justify-between p-3 rounded-lg bg-slate-100 text-slate-800 font-semibold">
                   <span>Bank NEFT / Direct:</span>
-                  <span>₹{paymentBreakdown.bankTransfer.toLocaleString('en-IN')}</span>
+                  <span>₹{filteredPaymentBreakdown.bankTransfer.toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </Card>
@@ -256,7 +396,7 @@ export const ReportsPage: React.FC = () => {
             <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
               <CardTitle>Top Selling Bakery Items by Volume &amp; Revenue</CardTitle>
             </CardHeader>
-            <TopProductsChart />
+            <TopProductsChart items={realTopProducts} />
           </Card>
         </div>
       )}

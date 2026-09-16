@@ -1,26 +1,25 @@
 import React, { useState } from 'react';
 
-interface DayData {
+export interface DayData {
   day: string;
   date: string;
   sales: number;
 }
 
-const mockTrendData: DayData[] = [
-  { day: 'Tue', date: '08 Sep', sales: 9400 },
-  { day: 'Wed', date: '09 Sep', sales: 11200 },
-  { day: 'Thu', date: '10 Sep', sales: 10800 },
-  { day: 'Fri', date: '11 Sep', sales: 13500 },
-  { day: 'Sat', date: '12 Sep', sales: 15200 },
-  { day: 'Sun', date: '13 Sep', sales: 14100 },
-  { day: 'Today', date: '14 Sep', sales: 12450 },
-];
-
-export const SalesTrendChart: React.FC<{ todaySales?: number }> = ({ todaySales }) => {
+export const SalesTrendChart: React.FC<{ data?: DayData[]; todaySales?: number }> = ({
+  data: propData,
+  todaySales,
+}) => {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
-  const data = mockTrendData.map((d, i) =>
-    i === mockTrendData.length - 1 && todaySales !== undefined ? { ...d, sales: todaySales } : d
+  const defaultData: DayData[] = propData && propData.length > 0
+    ? propData
+    : [
+        { day: 'Today', date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }), sales: todaySales || 0 }
+      ];
+
+  const data = defaultData.map((d, i) =>
+    i === defaultData.length - 1 && todaySales !== undefined ? { ...d, sales: todaySales } : d
   );
 
   const maxSales = Math.max(...data.map((d) => d.sales), 16000);

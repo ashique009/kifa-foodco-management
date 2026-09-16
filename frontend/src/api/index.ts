@@ -29,6 +29,7 @@ export const productsApi = {
     unit: string;
     purchase_price?: number;
     selling_price?: number;
+    category?: string;
   }) => api.post<{ message: string; product: any }>('/api/products', data),
   update: (id: string, data: Partial<{
     product_name: string;
@@ -37,6 +38,7 @@ export const productsApi = {
     purchase_price?: number;
     selling_price?: number;
     is_active?: boolean;
+    category?: string;
   }>) => api.put<{ message: string; product: any }>(`/api/products/${id}`, data),
   delete: (id: string) =>
     api.delete<{ message: string }>(`/api/products/${id}`),
@@ -169,6 +171,25 @@ export const tripsApi = {
     api.get<{ stock: any[] }>(`/api/trips/${tripId}/stock`),
   start: (tripId: string) =>
     api.post<{ message: string; trip: any }>(`/api/trips/${tripId}/start`),
+  recordDamage: (
+    tripId: string,
+    data: {
+      product_id: string;
+      batch_id?: string;
+      quantity: number;
+      notes?: string;
+      idempotency_key?: string;
+    }
+  ) =>
+    api.post<{ message: string; damage?: any; is_duplicate?: boolean }>(
+      `/api/trips/${tripId}/damage`,
+      data,
+      {
+        headers: data.idempotency_key
+          ? { 'Idempotency-Key': data.idempotency_key }
+          : undefined,
+      }
+    ),
   reconcile: (tripId: string) =>
     api.post<{
       message: string;

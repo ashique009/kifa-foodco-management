@@ -63,7 +63,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             Good Morning, {currentUser.name}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Bakery wholesale operations, dispatches & collection overview.
+            Kifa Food Co. wholesale operations, dispatches & collection overview.
           </p>
         </div>
 

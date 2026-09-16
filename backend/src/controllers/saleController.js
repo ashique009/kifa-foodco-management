@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
+const { verifyTripAccess, getStaffIdForUser } = require("../middleware/authorize");
 
 // Helper to retrieve an existing sale with all items for idempotency
 const getExistingSaleWithItems = async (dbClientOrPool, idempotencyKey) => {
@@ -108,6 +109,12 @@ const createSale = async (req, res) => {
       });
     }
 
+    if (Number(discount) < 0) {
+      return res.status(400).json({
+        message: "Discount cannot be negative",
+      });
+    }
+
     if (!items || items.length === 0) {
       return res.status(400).json({
         message: "At least one sale item is required",
@@ -141,7 +148,13 @@ const createSale = async (req, res) => {
       }
     }
 
-    // Check trip
+    // Check trip and authorization
+    const access = await verifyTripAccess(trip_id, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
     const tripResult = await client.query(
       `
       SELECT id, status, sales_staff_id
@@ -151,14 +164,6 @@ const createSale = async (req, res) => {
       `,
       [trip_id]
     );
-
-    if (tripResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-
-      return res.status(404).json({
-        message: "Trip not found",
-      });
-    }
 
     const trip = tripResult.rows[0];
 
@@ -555,7 +560,7 @@ const createSale = async (req, res) => {
 // GET ALL SALES
 const getSales = async (req, res) => {
   try {
-    const result = await pool.query(`
+    let query = `
       SELECT
         s.*,
         sh.shop_name,
@@ -579,9 +584,27 @@ const getSales = async (req, res) => {
       LEFT JOIN staff st ON st.id = s.sales_staff_id
       LEFT JOIN sale_items si ON si.sale_id = s.id
       LEFT JOIN products p ON p.id = si.product_id
+    `;
+    const params = [];
+
+    // If caller is STAFF, only return sales for trips assigned to them
+    if (req.user && req.user.role !== "admin") {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.json({ sales: [] });
+      }
+      query += ` WHERE s.trip_id IN (
+        SELECT id FROM trips WHERE driver_id = $1 OR sales_staff_id = $1
+      ) `;
+      params.push(staffId);
+    }
+
+    query += `
       GROUP BY s.id, sh.shop_name, st.name
       ORDER BY s.sale_date DESC, s.created_at DESC
-    `);
+    `;
+
+    const result = await pool.query(query, params);
 
     res.json({
       sales: result.rows,

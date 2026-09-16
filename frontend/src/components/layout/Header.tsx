@@ -9,8 +9,8 @@ import {
   Info,
   Layers,
   Store,
-  Wheat,
 } from 'lucide-react';
+import logoImg from '../../assets/logo.jpg';
 import { useBakery } from '../../context/BakeryContext';
 import { NavigationPage } from './Sidebar';
 
@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const pageInfo = pageTitles[currentPage] || { title: 'KIFA', subtitle: 'the real taste' };
+  const pageInfo = pageTitles[currentPage] || { title: 'Kifa Food Co.', subtitle: 'Distribution & Operations' };
 
   return (
     <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200/90 px-4 lg:px-8 flex items-center justify-between shadow-2xs">
@@ -80,15 +80,17 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Mobile mini brand mark */}
         <div className="flex items-center gap-1.5 lg:hidden border-r border-slate-200 pr-2.5 mr-0.5">
-          <div className="w-7 h-7 rounded-lg bg-[#172554] flex items-center justify-center text-[#F59E0B] shadow-2xs">
-            <Wheat className="w-4 h-4" />
-          </div>
+          <img
+            src={logoImg}
+            alt="Kifa Food Co."
+            className="w-7 h-7 rounded-md object-contain shadow-2xs shrink-0"
+          />
           <div className="flex flex-col">
-            <span className="font-brand font-black text-xs text-[#172554] tracking-wider leading-none">
-              KIFA
+            <span className="font-brand font-bold text-xs text-slate-900 tracking-wide leading-none">
+              Kifa Food Co.
             </span>
-            <span className="font-tagline italic text-[8px] text-amber-600 font-medium leading-none mt-0.5">
-              the real taste
+            <span className="text-[8px] text-slate-500 font-medium uppercase tracking-wider leading-none mt-0.5">
+              Distribution
             </span>
           </div>
         </div>

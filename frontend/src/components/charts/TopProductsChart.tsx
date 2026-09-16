@@ -8,17 +8,17 @@ export interface TopProductItem {
   revenue: number;
 }
 
-const mockTopProducts: TopProductItem[] = [
-  { id: '1', name: 'Milk Bread (400g)', unit: 'pkts', quantitySold: 145, revenue: 4350 },
-  { id: '2', name: 'Sweet Bun (Pack of 4)', unit: 'pkts', quantitySold: 75, revenue: 1125 },
-  { id: '3', name: 'Vanilla Cream Bun', unit: 'pcs', quantitySold: 50, revenue: 1000 },
-  { id: '4', name: 'Whole Wheat Brown Bread', unit: 'pkts', quantitySold: 45, revenue: 1800 },
-  { id: '5', name: 'Rich Plum Cake (500g)', unit: 'boxes', quantitySold: 14, revenue: 3500 },
-];
-
 export const TopProductsChart: React.FC<{ items?: TopProductItem[] }> = ({
-  items = mockTopProducts,
+  items = [],
 }) => {
+  if (items.length === 0) {
+    return (
+      <div className="py-8 text-center text-xs text-slate-400">
+        No sales recorded for bakery products in this time period.
+      </div>
+    );
+  }
+
   const maxQty = Math.max(...items.map((i) => i.quantitySold), 1);
 
   return (

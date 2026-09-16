@@ -39,7 +39,24 @@ const createPurchase = async (req, res) => {
         });
       }
 
-      subtotal += Number(item.quantity) * Number(item.unit_cost);
+      const itemQty = Number(item.quantity);
+      const itemCost = Number(item.unit_cost);
+
+      if (isNaN(itemQty) || itemQty <= 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Item quantity must be a positive number greater than 0",
+        });
+      }
+
+      if (isNaN(itemCost) || itemCost < 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          message: "Item unit cost must be greater than or equal to 0",
+        });
+      }
+
+      subtotal += itemQty * itemCost;
     }
 
     const total_amount = subtotal - Number(discount);

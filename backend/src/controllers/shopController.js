@@ -134,6 +134,35 @@ const getShopLedger = async (req, res) => {
       });
     }
 
+    // Role-based access check: If user is STAFF (not admin), verify that this shop is assigned to one of their trips
+    if (req.user && req.user.role !== "admin") {
+      const staffCheck = await pool.query(
+        `SELECT id FROM staff WHERE user_id = $1 LIMIT 1`,
+        [req.user.userId]
+      );
+      const staffId = staffCheck.rows[0]?.id;
+      if (!staffId) {
+        return res.status(403).json({
+          message: "No staff profile linked to this user",
+        });
+      }
+
+      const assignedShop = await pool.query(
+        `SELECT ts.id 
+         FROM trip_shops ts
+         JOIN trips t ON t.id = ts.trip_id
+         WHERE ts.shop_id = $1 AND (t.driver_id = $2 OR t.sales_staff_id = $2)
+         LIMIT 1`,
+        [id, staffId]
+      );
+
+      if (assignedShop.rows.length === 0) {
+        return res.status(403).json({
+          message: "You are not assigned to any trips serving this shop",
+        });
+      }
+    }
+
     // Get ledger entries
     const ledgerResult = await pool.query(
       `

@@ -60,7 +60,7 @@ interface BakeryContextType {
   // Auth state
   isAuthenticated: boolean;
   isLoadingData: boolean;
-  currentUser: { id?: string; username?: string; name: string; role: string };
+  currentUser: { id?: string; username?: string; name: string; role: string; userRole: 'admin' | 'staff' };
   login: (user: any) => void;
   logout: () => void;
   refreshAllData: () => Promise<void>;
@@ -102,6 +102,16 @@ interface BakeryContextType {
   recordSale: (saleData: Omit<Sale, 'id' | 'invoiceNumber' | 'date' | 'time'> & { idempotencyKey?: string }) => Promise<Sale | null>;
   receivePayment: (paymentData: Omit<Payment, 'id' | 'receiptNumber' | 'date'> & { idempotencyKey?: string }) => Promise<Payment | null>;
   recordReturn: (returnData: Omit<ReturnItem, 'id' | 'date'>) => Promise<ReturnItem | null>;
+  recordTransitDamage: (
+    tripId: string,
+    data: {
+      product_id: string;
+      batch_id?: string;
+      quantity: number;
+      notes?: string;
+      idempotency_key?: string;
+    }
+  ) => Promise<boolean>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   updateProduct: (id: string, product: Partial<Product>) => Promise<void>;
   archiveProduct: (id: string) => Promise<void>;
@@ -137,17 +147,20 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     username?: string;
     name: string;
     role: string;
+    userRole: 'admin' | 'staff';
   }>(() => {
     const stored = getStoredUser();
     if (stored) {
+      const isAdmin = stored.role === 'admin';
       return {
         id: stored.id,
         username: stored.username,
         name: stored.name || stored.username,
-        role: stored.role === 'admin' ? 'Business Owner / Admin' : stored.role,
+        role: isAdmin ? 'Business Owner / Admin' : stored.role,
+        userRole: isAdmin ? 'admin' : 'staff',
       };
     }
-    return { name: 'Admin', role: 'Business Owner / Admin' };
+    return { name: 'Admin', role: 'Business Owner / Admin', userRole: 'admin' };
   });
 
   const isAuthenticated = Boolean(token);
@@ -199,11 +212,13 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const login = (user: AuthUser) => {
     const activeToken = getToken();
     setTokenState(activeToken);
+    const isAdmin = user.role === 'admin';
     setCurrentUserState({
       id: user.id,
       username: user.username,
       name: user.name || user.username,
-      role: user.role === 'admin' ? 'Business Owner / Admin' : user.role,
+      role: isAdmin ? 'Business Owner / Admin' : user.role,
+      userRole: isAdmin ? 'admin' : 'staff',
     });
     showToast('success', 'Welcome Back', `Logged in as ${user.username}`);
   };
@@ -281,7 +296,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           id: p.id,
           name: p.product_name,
           sku: p.sku || '',
-          category: 'Bread',
+          category: p.category || 'General',
           unit: (p.unit?.toLowerCase() as any) || 'packet',
           purchasePrice: Number(p.purchase_price || 0),
           sellingPrice: Number(p.selling_price || 0),
@@ -429,6 +444,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             unit: (st.unit || 'packet') as ProductUnit,
             loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
             soldQty: Number(st.sold_quantity || 0),
+            damagedQty: Number(st.damaged_quantity || 0),
             returnedQty: Number(st.returned_quantity || 0),
             vanBalance: Number(st.van_balance !== undefined ? st.van_balance : 0),
             unitPrice: Number(st.unit_price || 30),
@@ -661,12 +677,52 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       showToast('success', 'Trip Created', `Trip created and loaded successfully.`);
       await refreshAllData();
 
-      const created = trips.find((t) => t.id === newTripId);
-      return created || {
-        ...tripData,
-        id: newTripId,
-        tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
-      };
+      // Fetch newly created trip details directly from backend to avoid stale React state
+      try {
+        const [tShopsRes, tStockRes] = await Promise.all([
+          tripsApi.getShops(newTripId).catch(() => ({ shops: [] })),
+          tripsApi.getStock(newTripId).catch(() => ({ stock: [] })),
+        ]);
+
+        const tripShops = (tShopsRes.shops || []).map((ts: any) => ({
+          shopId: ts.shop_id,
+          shopName: ts.shop_name,
+          ownerName: ts.owner_name || '',
+          phone: ts.phone || '',
+          address: ts.address || '',
+          sequence: ts.visit_order || 1,
+          status: ts.visited_at ? ('completed' as const) : ('pending' as const),
+          visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+        }));
+
+        const loadedItems = (tStockRes.stock || []).map((st: any) => ({
+          productId: st.product_id,
+          productName: st.product_name,
+          unit: (st.unit || 'packet') as ProductUnit,
+          loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
+          soldQty: Number(st.sold_quantity || 0),
+          damagedQty: Number(st.damaged_quantity || 0),
+          returnedQty: Number(st.returned_quantity || 0),
+          vanBalance: Number(st.van_balance !== undefined ? st.van_balance : st.loaded_quantity || 0),
+          unitPrice: Number(st.unit_price || 30),
+        }));
+
+        return {
+          ...tripData,
+          id: newTripId,
+          tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
+          status: mapBackendTripStatus(res.trip.status || 'loaded'),
+          shops: tripShops.length > 0 ? tripShops : tripData.shops,
+          loadedItems: loadedItems.length > 0 ? loadedItems : tripData.loadedItems,
+        };
+      } catch {
+        return {
+          ...tripData,
+          id: newTripId,
+          tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
+          status: mapBackendTripStatus(res.trip.status || 'loaded'),
+        };
+      }
     } catch (err: any) {
       console.error('Create trip error:', err);
       const errorMsg =
@@ -874,6 +930,37 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   };
 
+  // 5b. Record Transit Damage
+  const recordTransitDamage = async (
+    tripId: string,
+    data: {
+      product_id: string;
+      batch_id?: string;
+      quantity: number;
+      notes?: string;
+      idempotency_key?: string;
+    }
+  ): Promise<boolean> => {
+    try {
+      const res = await tripsApi.recordDamage(tripId, data);
+      showToast(
+        'success',
+        'Damage Recorded',
+        res.message || 'Transit damage recorded successfully.'
+      );
+      await refreshAllData();
+      return true;
+    } catch (err: any) {
+      console.error('Record transit damage error:', err);
+      showToast(
+        'error',
+        'Damage Recording Failed',
+        err.response?.data?.message || err.message || 'Error communicating with backend.'
+      );
+      return false;
+    }
+  };
+
   // 6. Products CRUD
   const addProduct = async (prodData: Omit<Product, 'id'>) => {
     try {
@@ -883,6 +970,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         unit: prodData.unit,
         purchase_price: prodData.purchasePrice,
         selling_price: prodData.sellingPrice,
+        category: prodData.category,
       });
       showToast('success', 'Product Added', `${prodData.name} saved to catalog.`);
       await refreshAllData();
@@ -900,6 +988,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         purchase_price: updated.purchasePrice,
         selling_price: updated.sellingPrice,
         is_active: updated.isActive,
+        category: updated.category,
       });
       showToast('info', 'Product Updated', 'Product details saved.');
       await refreshAllData();
@@ -1194,6 +1283,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         recordSale,
         receivePayment,
         recordReturn,
+        recordTransitDamage,
         addProduct,
         updateProduct,
         archiveProduct,

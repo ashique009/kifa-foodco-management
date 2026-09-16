@@ -6,11 +6,13 @@ export interface Batch {
   quantity: number;
 }
 
+export type ProductCategory = 'Bread' | 'Bun' | 'Cake' | 'Cookies & Rusk' | 'Snacks & Puffs' | 'General' | (string & {});
+
 export interface Product {
   id: string;
   name: string;
   sku: string;
-  category: 'Bread' | 'Bun' | 'Cake' | 'Cookies & Rusk' | 'Snacks & Puffs';
+  category: ProductCategory;
   unit: ProductUnit;
   purchasePrice: number;
   sellingPrice: number;
@@ -79,6 +81,7 @@ export interface TripLoadedItem {
   unit: ProductUnit;
   loadedQty: number;
   soldQty: number;
+  damagedQty?: number;
   returnedQty: number;
   unitPrice: number;
   vanBalance?: number;

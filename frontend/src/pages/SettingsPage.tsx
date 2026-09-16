@@ -13,15 +13,15 @@ export const SettingsPage: React.FC = () => {
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   // Business info form
-  const [businessName, setBusinessName] = useState('KIFA Bakers & Confectionery');
+  const [businessName, setBusinessName] = useState('Kifa Food Co.');
   const [gstin, setGstin] = useState('32ABCDE1234F1Z5');
   const [phone, setPhone] = useState('0495-2760000');
-  const [email, setEmail] = useState('orders@kifabakery.com');
+  const [email, setEmail] = useState('orders@kifafoodco.com');
   const [address, setAddress] = useState('Industrial Estate Road, Malaparamba, Kozhikode, Kerala 673009');
 
   // Invoice prefix
   const [invoicePrefix, setInvoicePrefix] = useState('KIFA-2026-');
-  const [footerNote, setFooterNote] = useState('Thank you for choosing KIFA — the real taste! Goods once sold will only be replaced if reported within 24 hours.');
+  const [footerNote, setFooterNote] = useState('Thank you for choosing Kifa Food Co.! Goods once sold will only be replaced if reported within 24 hours.');
 
   const handleSaveBusiness = (e: React.FormEvent) => {
     e.preventDefault();

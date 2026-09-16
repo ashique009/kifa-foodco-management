@@ -9,11 +9,24 @@ const createProduct = async (req, res) => {
       unit,
       purchase_price,
       selling_price,
+      category,
     } = req.body;
 
     if (!product_name || !unit) {
       return res.status(400).json({
         message: "Product name and unit are required",
+      });
+    }
+
+    if (purchase_price !== undefined && Number(purchase_price) < 0) {
+      return res.status(400).json({
+        message: "Purchase price must be greater than or equal to 0",
+      });
+    }
+
+    if (selling_price !== undefined && Number(selling_price) < 0) {
+      return res.status(400).json({
+        message: "Selling price must be greater than or equal to 0",
       });
     }
 
@@ -24,9 +37,10 @@ const createProduct = async (req, res) => {
         sku,
         unit,
         purchase_price,
-        selling_price
+        selling_price,
+        category
       )
-      VALUES ($1, $2, $3, $4, $5)
+      VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
       `,
       [
@@ -35,6 +49,7 @@ const createProduct = async (req, res) => {
         unit,
         purchase_price || 0,
         selling_price || 0,
+        category || 'General',
       ]
     );
 
@@ -124,7 +139,20 @@ const updateProduct = async (req, res) => {
       purchase_price,
       selling_price,
       is_active,
+      category,
     } = req.body;
+
+    if (purchase_price !== undefined && Number(purchase_price) < 0) {
+      return res.status(400).json({
+        message: "Purchase price must be greater than or equal to 0",
+      });
+    }
+
+    if (selling_price !== undefined && Number(selling_price) < 0) {
+      return res.status(400).json({
+        message: "Selling price must be greater than or equal to 0",
+      });
+    }
 
     const result = await pool.query(
       `
@@ -136,8 +164,9 @@ const updateProduct = async (req, res) => {
         purchase_price = COALESCE($4, purchase_price),
         selling_price = COALESCE($5, selling_price),
         is_active = COALESCE($6, is_active),
+        category = COALESCE($7, category),
         updated_at = NOW()
-      WHERE id = $7
+      WHERE id = $8
       RETURNING *
       `,
       [
@@ -147,6 +176,7 @@ const updateProduct = async (req, res) => {
         purchase_price,
         selling_price,
         is_active,
+        category,
         id,
       ]
     );

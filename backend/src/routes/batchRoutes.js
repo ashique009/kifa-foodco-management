@@ -7,19 +7,21 @@ const {
 } = require("../controllers/batchController");
 
 const authenticateToken = require("../middleware/auth");
+const { requireAdmin } = require("../middleware/authorize");
+const { validateUuidParam } = require("../middleware/validateUuid");
 
 const router = express.Router();
 
 // All batch routes require login
 router.use(authenticateToken);
 
-// Create a batch
-router.post("/", createBatch);
+// Create a batch (ADMIN only)
+router.post("/", requireAdmin, createBatch);
 
 // Get all batches
 router.get("/", getBatches);
 
 // Get batches for a specific product
-router.get("/product/:productId", getBatchesByProduct);
+router.get("/product/:productId", validateUuidParam("productId"), getBatchesByProduct);
 
 module.exports = router;

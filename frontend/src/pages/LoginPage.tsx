@@ -4,7 +4,8 @@ import { setToken, setStoredUser } from '../api/client';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { Lock, User, AlertCircle, Sparkles } from 'lucide-react';
+import { Lock, User, AlertCircle } from 'lucide-react';
+import logoImg from '../assets/logo.jpg';
 
 interface LoginPageProps {
   onLoginSuccess: (user: { id: string; username: string; role: string }) => void;
@@ -45,11 +46,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         {/* Brand Header */}
         <div className="text-center">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-white shadow-md mb-3">
-            <Sparkles className="w-6 h-6 text-accent" />
-          </div>
+          <img
+            src={logoImg}
+            alt="Kifa Food Co."
+            className="w-20 h-20 mx-auto rounded-2xl shadow-md object-contain mb-3"
+          />
           <h1 className="text-2xl sm:text-3xl font-bold font-brand tracking-tight text-slate-900">
-            KIFA Bakery
+            Kifa Food Co.
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Wholesale & Distribution Management System
@@ -111,12 +114,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </Button>
             </div>
           </form>
-
-          <div className="mt-6 pt-5 border-t border-slate-100 text-center">
-            <p className="text-[11px] text-slate-400">
-              Connected to backend: <span className="font-mono text-slate-600">localhost:5001</span>
-            </p>
-          </div>
         </Card>
       </div>
     </div>

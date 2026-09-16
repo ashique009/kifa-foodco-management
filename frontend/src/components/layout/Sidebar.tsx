@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useBakery } from '../../context/BakeryContext';
 import {
   LayoutDashboard,
   Truck,
@@ -16,8 +17,8 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
-  Wheat,
 } from 'lucide-react';
+import logoImg from '../../assets/logo.jpg';
 
 export type NavigationPage =
   | 'dashboard'
@@ -48,6 +49,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile,
 }) => {
+  const { currentUser } = useBakery();
+  const isAdmin = currentUser.userRole === 'admin';
   const [isMoreExpanded, setIsMoreExpanded] = useState(false);
 
   const mainNav = [
@@ -93,19 +96,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center px-5 gap-3 border-b border-blue-900/50 bg-[#0F172A]">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-400 to-[#F59E0B] flex items-center justify-center text-slate-950 shadow-sm shadow-amber-500/10 shrink-0">
-            <Wheat className="w-5 h-5 text-slate-950 stroke-[2.2]" />
-          </div>
+        <div className="h-16 flex items-center px-4 gap-3 border-b border-blue-900/50 bg-[#0F172A]">
+          <img
+            src={logoImg}
+            alt="Kifa Food Co."
+            className="w-9 h-9 rounded-lg object-contain shadow-xs shrink-0"
+          />
           <div className="min-w-0 flex flex-col justify-center">
-            <div className="flex items-center gap-1.5 leading-none">
-              <span className="font-brand font-black text-lg tracking-wider text-white select-none">
-                KIFA
-              </span>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B]" />
-            </div>
-            <p className="font-tagline italic text-[11px] text-amber-300 font-medium tracking-wide mt-1 leading-none">
-              the real taste
+            <span className="font-brand font-bold text-base tracking-wide text-white select-none truncate">
+              Kifa Food Co.
+            </span>
+            <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase mt-0.5 leading-none">
+              Distribution
             </p>
           </div>
         </div>
@@ -132,47 +134,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
 
-          {/* More Section Accordion */}
-          <div className="pt-2">
-            <button
-              onClick={() => setIsMoreExpanded(!isMoreExpanded)}
-              className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${
-                isMoreActive
-                  ? 'text-amber-400'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <span>Management / More</span>
-              {isMoreExpanded ? (
-                <ChevronDown className="w-3.5 h-3.5" />
-              ) : (
-                <ChevronRight className="w-3.5 h-3.5" />
-              )}
-            </button>
+          {/* More Section Accordion (ADMIN only) */}
+          {isAdmin && (
+            <div className="pt-2">
+              <button
+                onClick={() => setIsMoreExpanded(!isMoreExpanded)}
+                className={`w-full flex items-center justify-between px-3.5 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${
+                  isMoreActive
+                    ? 'text-amber-400'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <span>Management / More</span>
+                {isMoreExpanded ? (
+                  <ChevronDown className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                )}
+              </button>
 
-            {(isMoreExpanded || isMoreActive) && (
-              <div className="mt-1 pl-2 space-y-0.5 border-l border-blue-900/60 ml-3">
-                {moreNav.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = currentPage === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleNavClick(item.id)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
-                        isActive
-                          ? 'bg-blue-900/80 text-white font-semibold text-[#F59E0B]'
-                          : 'text-slate-300 hover:bg-blue-900/40 hover:text-white'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+              {(isMoreExpanded || isMoreActive) && (
+                <div className="mt-1 pl-2 space-y-0.5 border-l border-blue-900/60 ml-3">
+                  {moreNav.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = currentPage === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNavClick(item.id)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                          isActive
+                            ? 'bg-blue-900/80 text-white font-semibold text-[#F59E0B]'
+                            : 'text-slate-300 hover:bg-blue-900/40 hover:text-white'
+                        }`}
+                      >
+                        <Icon className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Bottom Settings Link */}

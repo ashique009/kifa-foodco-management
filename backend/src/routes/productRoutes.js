@@ -9,25 +9,27 @@ const {
 } = require("../controllers/productController");
 
 const authenticateToken = require("../middleware/auth");
+const { requireAdmin } = require("../middleware/authorize");
+const { validateUuidParam } = require("../middleware/validateUuid");
 
 const router = express.Router();
 
 // All product routes require login
 router.use(authenticateToken);
 
-// Create product
-router.post("/", createProduct);
+// Create product (ADMIN only)
+router.post("/", requireAdmin, createProduct);
 
-// Get all products
+// Get all products (All authenticated users)
 router.get("/", getProducts);
 
 // Get one product
-router.get("/:id", getProductById);
+router.get("/:id", validateUuidParam("id"), getProductById);
 
-// Update product
-router.put("/:id", updateProduct);
+// Update product (ADMIN only)
+router.put("/:id", requireAdmin, validateUuidParam("id"), updateProduct);
 
-// Delete product
-router.delete("/:id", deleteProduct);
+// Delete product (ADMIN only)
+router.delete("/:id", requireAdmin, validateUuidParam("id"), deleteProduct);
 
 module.exports = router;

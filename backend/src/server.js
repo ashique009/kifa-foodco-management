@@ -18,9 +18,28 @@ const paymentRoutes = require("./routes/paymentRoutes");
 const returnRoutes = require("./routes/returnRoutes");
 
 
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
+  ...(process.env.CLIENT_ORIGIN
+    ? process.env.CLIENT_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
+    : []),
+];
+
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        (process.env.NODE_ENV !== "production" &&
+          (origin.startsWith("http://localhost:") ||
+            origin.startsWith("http://127.0.0.1:")))
+      ) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS policy does not allow access from origin ${origin}`));
+    },
     credentials: true,
   })
 );
@@ -39,34 +58,54 @@ app.use("/api/sales", saleRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/returns", returnRoutes);
 
-
 app.get("/", (req, res) => {
   res.json({
     message: "Bakery Management API is running 🚀",
   });
 });
 
-app.get("/api/test-db", async (req, res) => {
-  try {
-    const result = await pool.query("SELECT NOW()");
-
-    res.json({
-      message: "Database connected successfully 🎉",
-      time: result.rows[0].now,
-    });
-  } catch (error) {
-    console.error(error);
-
-    res.status(500).json({
-      message: "Database connection failed",
-    });
-  }
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+  });
 });
 
-app.get("/api/test-auth", authenticateToken, (req, res) => {
-  res.json({
-    message: "Authentication works 🔐",
-    user: req.user,
+if (process.env.NODE_ENV !== "production") {
+  app.get("/api/test-db", async (req, res) => {
+    try {
+      const result = await pool.query("SELECT NOW()");
+
+      res.json({
+        message: "Database connected successfully 🎉",
+        time: result.rows[0].now,
+      });
+    } catch (error) {
+      console.error(error);
+
+      res.status(500).json({
+        message: "Database connection failed",
+      });
+    }
+  });
+
+  app.get("/api/test-auth", authenticateToken, (req, res) => {
+    res.json({
+      message: "Authentication works 🔐",
+      user: req.user,
+    });
+  });
+}
+
+// Global error handling middleware
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err.message);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({
+    success: false,
+    message:
+      process.env.NODE_ENV === "production"
+        ? "Internal server error"
+        : err.message || "Internal server error",
   });
 });
 

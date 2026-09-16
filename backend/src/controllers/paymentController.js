@@ -1,4 +1,5 @@
 const pool = require("../config/database");
+const { getStaffIdForUser } = require("../middleware/authorize");
 
 // CREATE PAYMENT
 const createPayment = async (req, res) => {
@@ -46,6 +47,31 @@ const createPayment = async (req, res) => {
       req.headers["idempotency-key"] ||
       req.body.idempotency_key ||
       null;
+
+    // Role check: If STAFF, check that shop belongs to at least one assigned trip
+    if (req.user && req.user.role !== "admin") {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.status(403).json({
+          message: "No staff profile linked to this user",
+        });
+      }
+
+      const assignedCheck = await pool.query(
+        `SELECT ts.id 
+         FROM trip_shops ts
+         JOIN trips t ON t.id = ts.trip_id
+         WHERE ts.shop_id = $1 AND (t.driver_id = $2 OR t.sales_staff_id = $2)
+         LIMIT 1`,
+        [shop_id, staffId]
+      );
+
+      if (assignedCheck.rows.length === 0) {
+        return res.status(403).json({
+          message: "You are not assigned to any trips serving this shop",
+        });
+      }
+    }
 
     // Fast-path idempotency check before transaction
     if (idempotencyKey) {
@@ -283,14 +309,33 @@ const createPayment = async (req, res) => {
 // GET ALL PAYMENTS
 const getPayments = async (req, res) => {
   try {
-    const result = await pool.query(`
+    let query = `
       SELECT
         p.*,
         sh.shop_name
       FROM payments p
       JOIN shops sh ON sh.id = p.shop_id
-      ORDER BY p.payment_date DESC, p.created_at DESC
-    `);
+    `;
+    const params = [];
+
+    // If caller is STAFF, only return payments for shops assigned to their trips
+    if (req.user && req.user.role !== "admin") {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.json({ payments: [] });
+      }
+      query += ` WHERE p.shop_id IN (
+        SELECT ts.shop_id
+        FROM trip_shops ts
+        JOIN trips t ON t.id = ts.trip_id
+        WHERE t.driver_id = $1 OR t.sales_staff_id = $1
+      ) `;
+      params.push(staffId);
+    }
+
+    query += ` ORDER BY p.payment_date DESC, p.created_at DESC `;
+
+    const result = await pool.query(query, params);
 
     res.json({
       payments: result.rows,

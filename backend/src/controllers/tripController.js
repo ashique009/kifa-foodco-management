@@ -1,5 +1,6 @@
 const pool = require("../config/database");
 const crypto = require("crypto");
+const { verifyTripAccess, getStaffIdForUser } = require("../middleware/authorize");
 
 // CREATE TRIP
 const createTrip = async (req, res) => {
@@ -334,8 +335,7 @@ const createTrip = async (req, res) => {
 // GET ALL TRIPS
 const getTrips = async (req, res) => {
   try {
-    const result = await pool.query(
-      `
+    let query = `
       SELECT
         t.*,
         v.vehicle_number,
@@ -349,9 +349,22 @@ const getTrips = async (req, res) => {
         ON d.id = t.driver_id
       JOIN staff s
         ON s.id = t.sales_staff_id
-      ORDER BY t.trip_date DESC, t.created_at DESC
-      `
-    );
+    `;
+    const params = [];
+
+    // If caller is STAFF, only return trips where they are driver or sales_staff
+    if (req.user && req.user.role !== "admin") {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.json({ trips: [] });
+      }
+      query += ` WHERE t.driver_id = $1 OR t.sales_staff_id = $1 `;
+      params.push(staffId);
+    }
+
+    query += ` ORDER BY t.trip_date DESC, t.created_at DESC `;
+
+    const result = await pool.query(query, params);
 
     res.json({
       trips: result.rows,
@@ -389,7 +402,13 @@ const loadStock = async (req, res) => {
 
     await client.query("BEGIN");
 
-    // Check trip
+    // Check trip and authorization
+    const access = await verifyTripAccess(tripId, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
     const tripResult = await client.query(
       `
       SELECT id, status
@@ -399,14 +418,6 @@ const loadStock = async (req, res) => {
       `,
       [tripId]
     );
-
-    if (tripResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-
-      return res.status(404).json({
-        message: "Trip not found",
-      });
-    }
 
     const trip = tripResult.rows[0];
 
@@ -573,31 +584,23 @@ const addShopToTrip = async (req, res) => {
       });
     }
 
-    // Check trip exists
-    const tripResult = await pool.query(
-      `
-      SELECT id, status
-      FROM trips
-      WHERE id = $1
-      `,
-      [tripId]
-    );
-
-    if (tripResult.rows.length === 0) {
-      return res.status(404).json({
-        message: "Trip not found",
-      });
+    // Check trip exists and authorization
+    const access = await verifyTripAccess(tripId, req, pool);
+    if (!access.authorized) {
+      return res.status(access.status).json({ message: access.message });
     }
+
+    const trip = access.trip;
 
     // Only draft trips can have shops added
     if (
-  tripResult.rows[0].status !== "draft" &&
-  tripResult.rows[0].status !== "loaded"
-) {
-  return res.status(400).json({
-    message: "Shop can only be added while the trip is being prepared",
-  });
-}
+      trip.status !== "draft" &&
+      trip.status !== "loaded"
+    ) {
+      return res.status(400).json({
+        message: "Shop can only be added while the trip is being prepared",
+      });
+    }
 
     // Check shop exists and is active
     const shopResult = await pool.query(
@@ -659,19 +662,9 @@ const getTripShops = async (req, res) => {
   try {
     const { tripId } = req.params;
 
-    const tripResult = await pool.query(
-      `
-      SELECT id
-      FROM trips
-      WHERE id = $1
-      `,
-      [tripId]
-    );
-
-    if (tripResult.rows.length === 0) {
-      return res.status(404).json({
-        message: "Trip not found",
-      });
+    const access = await verifyTripAccess(tripId, req, pool);
+    if (!access.authorized) {
+      return res.status(access.status).json({ message: access.message });
     }
 
     const result = await pool.query(
@@ -712,6 +705,11 @@ const markShopVisited = async (req, res) => {
   try {
     const { tripId, shopId } = req.params;
 
+    const access = await verifyTripAccess(tripId, req, pool);
+    if (!access.authorized) {
+      return res.status(access.status).json({ message: access.message });
+    }
+
     const result = await pool.query(
       `
       UPDATE trip_shops
@@ -747,19 +745,13 @@ const getTripStock = async (req, res) => {
   try {
     const { tripId } = req.params;
 
-    // 1. Check trip existence and status
-    const tripRes = await pool.query(
-      "SELECT id, status FROM trips WHERE id = $1",
-      [tripId]
-    );
-
-    if (tripRes.rows.length === 0) {
-      return res.status(404).json({
-        message: "Trip not found",
-      });
+    // 1. Check trip existence and authorization
+    const access = await verifyTripAccess(tripId, req, pool);
+    if (!access.authorized) {
+      return res.status(access.status).json({ message: access.message });
     }
 
-    const tripStatus = tripRes.rows[0].status;
+    const tripStatus = access.trip.status;
     const isTripFinished = tripStatus === "completed" || tripStatus === "cancelled";
 
     // 2. Query aggregated metrics per product for this trip
@@ -775,6 +767,7 @@ const getTripStock = async (req, res) => {
         COALESCE(sold.qty, 0)::numeric AS sold_quantity,
         COALESCE(ret.qty, 0)::numeric AS returned_quantity,
         COALESCE(unloaded.qty, 0)::numeric AS unloaded_quantity,
+        COALESCE(damaged.qty, ts.damaged_qty, 0)::numeric AS damaged_quantity,
         COALESCE(ts.current_qty, 0)::numeric AS current_quantity,
         ts.batch_id,
         ts.batch_number
@@ -811,6 +804,12 @@ const getTripStock = async (req, res) => {
       LEFT JOIN (
         SELECT product_id, SUM(ABS(quantity_change)) AS qty
         FROM stock_ledger
+        WHERE trip_id = $1 AND movement_type = 'damage_out'
+        GROUP BY product_id
+      ) damaged ON damaged.product_id = p.id
+      LEFT JOIN (
+        SELECT product_id, SUM(ABS(quantity_change)) AS qty
+        FROM stock_ledger
         WHERE trip_id = $1 AND movement_type = 'unload_out'
         GROUP BY product_id
       ) unloaded ON unloaded.product_id = p.id
@@ -819,7 +818,8 @@ const getTripStock = async (req, res) => {
           ts_inner.product_id,
           ts_inner.batch_id,
           pb.batch_number,
-          SUM(ts_inner.quantity) OVER (PARTITION BY ts_inner.product_id) AS current_qty
+          SUM(ts_inner.quantity) OVER (PARTITION BY ts_inner.product_id) AS current_qty,
+          SUM(ts_inner.damaged_quantity) OVER (PARTITION BY ts_inner.product_id) AS damaged_qty
         FROM trip_stock ts_inner
         LEFT JOIN product_batches pb ON pb.id = ts_inner.batch_id
         WHERE ts_inner.trip_id = $1
@@ -835,20 +835,21 @@ const getTripStock = async (req, res) => {
       const soldQty = Number(row.sold_quantity || 0);
       const returnedQty = Number(row.returned_quantity || 0);
       const unloadedQty = Number(row.unloaded_quantity || 0);
+      const damagedQty = Number(row.damaged_quantity || 0);
       const currentQty = Number(row.current_quantity || 0);
 
       // Fallback: If stock_ledger load_in was not recorded (e.g. manual insertion),
-      // compute loaded as currentQty + soldQty - returnedQty + unloadedQty
-      if (loadedQty === 0 && (currentQty > 0 || soldQty > 0 || unloadedQty > 0)) {
-        loadedQty = Math.max(0, currentQty + soldQty - returnedQty + unloadedQty);
+      // compute loaded as currentQty + soldQty + damagedQty - returnedQty + unloadedQty
+      if (loadedQty === 0 && (currentQty > 0 || soldQty > 0 || damagedQty > 0 || unloadedQty > 0)) {
+        loadedQty = Math.max(0, currentQty + soldQty + damagedQty - returnedQty + unloadedQty);
       }
 
       // Balance in van:
       // If trip is completed/cancelled, remaining stock was returned to godown -> balance is 0.
-      // Otherwise: Loaded - Sold + shop_return
+      // Otherwise: Loaded - Sold - Damaged + Returned
       const vanBalance = isTripFinished
         ? 0
-        : Math.max(0, loadedQty - soldQty + returnedQty);
+        : Math.max(0, loadedQty - soldQty - damagedQty + returnedQty);
 
       return {
         id: row.product_id,
@@ -862,6 +863,7 @@ const getTripStock = async (req, res) => {
         batch_number: row.batch_number,
         loaded_quantity: loadedQty,
         sold_quantity: soldQty,
+        damaged_quantity: damagedQty,
         returned_quantity: returnedQty,
         unloaded_quantity: unloadedQty,
         van_balance: vanBalance,
@@ -890,6 +892,13 @@ const reconcileTrip = async (req, res) => {
 
     await client.query("BEGIN");
 
+    // Check trip and authorization
+    const access = await verifyTripAccess(tripId, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
     // Lock trip
     const tripResult = await client.query(
       `
@@ -905,14 +914,6 @@ const reconcileTrip = async (req, res) => {
       `,
       [tripId]
     );
-
-    if (tripResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-
-      return res.status(404).json({
-        message: "Trip not found",
-      });
-    }
 
     const trip = tripResult.rows[0];
 
@@ -1139,12 +1140,40 @@ const reconcileTrip = async (req, res) => {
   }
 };
 
-// START TRIP (loaded/draft -> in_progress)
+// START TRIP (only loaded -> in_progress)
 const startTrip = async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const { tripId } = req.params;
 
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    // Check trip and authorization
+    const access = await verifyTripAccess(tripId, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    // Lock trip row
+    const tripRes = await client.query(
+      `SELECT id, vehicle_id, status FROM trips WHERE id = $1 FOR UPDATE`,
+      [tripId]
+    );
+
+    const trip = tripRes.rows[0];
+
+    // Strictly enforce: only loaded -> in_progress allowed
+    if (trip.status !== "loaded") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: `Cannot start trip with status '${trip.status}'. Only loaded trips can be started.`,
+        current_status: trip.status,
+      });
+    }
+
+    const result = await client.query(
       `
       UPDATE trips
       SET status = 'in_progress',
@@ -1156,36 +1185,260 @@ const startTrip = async (req, res) => {
       [tripId]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({
-        message: "Trip not found",
-      });
-    }
+    const updatedTrip = result.rows[0];
 
-    const trip = result.rows[0];
-
-    if (trip.vehicle_id) {
-      await pool.query(
+    if (updatedTrip.vehicle_id) {
+      await client.query(
         `
         UPDATE vehicles
         SET status = 'on_trip',
             updated_at = NOW()
         WHERE id = $1
         `,
-        [trip.vehicle_id]
+        [updatedTrip.vehicle_id]
       );
     }
 
+    await client.query("COMMIT");
+
     res.json({
       message: "Trip started successfully",
-      trip,
+      trip: updatedTrip,
     });
   } catch (error) {
+    await client.query("ROLLBACK");
     console.error("Start trip error:", error);
 
     res.status(500).json({
       message: "Internal server error",
     });
+  } finally {
+    client.release();
+  }
+};
+
+// RECORD TRANSIT DAMAGE
+const recordTransitDamage = async (req, res) => {
+  const { tripId } = req.params;
+  const { product_id, batch_id, notes } = req.body;
+  const quantity = Number(req.body.quantity);
+
+  const idempotencyKey =
+    req.headers["idempotency-key"] || req.body.idempotency_key;
+
+  // Basic validation
+  if (!product_id) {
+    return res.status(400).json({
+      message: "Product ID is required",
+    });
+  }
+
+  if (isNaN(quantity) || quantity <= 0) {
+    return res.status(400).json({
+      message: "Quantity must be a positive number greater than 0",
+    });
+  }
+
+  // Fast-path idempotency check before opening transaction
+  if (idempotencyKey) {
+    try {
+      const existingLedger = await pool.query(
+        `SELECT sl.*, p.product_name 
+         FROM stock_ledger sl
+         JOIN products p ON p.id = sl.product_id
+         WHERE sl.idempotency_key = $1`,
+        [idempotencyKey]
+      );
+      if (existingLedger.rows.length > 0) {
+        return res.status(200).json({
+          message: "Transit damage already processed",
+          is_duplicate: true,
+          damage: existingLedger.rows[0],
+        });
+      }
+    } catch (checkErr) {
+      console.error("Fast-path damage idempotency check error:", checkErr);
+    }
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Concurrency lock on idempotency key
+    if (idempotencyKey) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [
+        idempotencyKey,
+      ]);
+
+      const existingUnderLock = await client.query(
+        `SELECT sl.*, p.product_name 
+         FROM stock_ledger sl
+         JOIN products p ON p.id = sl.product_id
+         WHERE sl.idempotency_key = $1`,
+        [idempotencyKey]
+      );
+
+      if (existingUnderLock.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(200).json({
+          message: "Transit damage already processed",
+          is_duplicate: true,
+          damage: existingUnderLock.rows[0],
+        });
+      }
+    }
+
+    // 1. Lock trip, verify authorization and status
+    const access = await verifyTripAccess(tripId, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    const tripRes = await client.query(
+      `SELECT id, status FROM trips WHERE id = $1 FOR UPDATE`,
+      [tripId]
+    );
+
+    const trip = tripRes.rows[0];
+    if (trip.status !== "in_progress") {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: `Only active in-progress trips can record damage (current trip status: '${trip.status}')`,
+        current_status: trip.status,
+      });
+    }
+
+    // 2. Query and lock trip_stock
+    let stockQuery = `
+      SELECT id, product_id, batch_id, quantity, damaged_quantity
+      FROM trip_stock
+      WHERE trip_id = $1 AND product_id = $2
+    `;
+    const params = [tripId, product_id];
+
+    if (batch_id) {
+      stockQuery += ` AND batch_id = $3`;
+      params.push(batch_id);
+    } else {
+      stockQuery += ` ORDER BY quantity DESC LIMIT 1`;
+    }
+    stockQuery += ` FOR UPDATE`;
+
+    const stockRes = await client.query(stockQuery, params);
+
+    if (stockRes.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "Product/batch does not belong to this trip",
+      });
+    }
+
+    const stockRow = stockRes.rows[0];
+    const availableStock = Number(stockRow.quantity || 0);
+
+    if (quantity > availableStock) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: `Quantity exceeds current available vehicle stock. Available: ${availableStock}, Requested: ${quantity}`,
+        available_quantity: availableStock,
+        requested_quantity: quantity,
+      });
+    }
+
+    // 3. Deduct quantity from trip_stock.quantity and increment trip_stock.damaged_quantity
+    const updatedStockRes = await client.query(
+      `
+      UPDATE trip_stock
+      SET quantity = quantity - $1,
+          damaged_quantity = damaged_quantity + $1,
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+      `,
+      [quantity, stockRow.id]
+    );
+
+    // 4. Create stock_ledger damage_out entry with negative quantity
+    const ledgerRes = await client.query(
+      `
+      INSERT INTO stock_ledger (
+        product_id,
+        batch_id,
+        movement_type,
+        quantity_change,
+        trip_id,
+        idempotency_key,
+        notes
+      )
+      VALUES (
+        $1,
+        $2,
+        'damage_out',
+        $3,
+        $4,
+        $5,
+        $6
+      )
+      RETURNING *
+      `,
+      [
+        product_id,
+        stockRow.batch_id,
+        -quantity,
+        tripId,
+        idempotencyKey || null,
+        notes || "Transit damaged product recorded",
+      ]
+    );
+
+    await client.query("COMMIT");
+
+    return res.status(201).json({
+      message: "Transit damage recorded successfully",
+      damage: {
+        product_id,
+        batch_id: stockRow.batch_id,
+        quantity,
+        damaged_quantity: Number(updatedStockRes.rows[0].damaged_quantity),
+        remaining_quantity: Number(updatedStockRes.rows[0].quantity),
+        notes: notes || null,
+        ledger_entry: ledgerRes.rows[0],
+      },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    // Catch duplicate idempotency key race condition gracefully (Postgres unique violation 23505)
+    if (error.code === "23505" && idempotencyKey) {
+      try {
+        const existingLedger = await pool.query(
+          `SELECT sl.*, p.product_name 
+           FROM stock_ledger sl
+           JOIN products p ON p.id = sl.product_id
+           WHERE sl.idempotency_key = $1`,
+          [idempotencyKey]
+        );
+        if (existingLedger.rows.length > 0) {
+          return res.status(200).json({
+            message: "Transit damage already processed",
+            is_duplicate: true,
+            damage: existingLedger.rows[0],
+          });
+        }
+      } catch (innerErr) {
+        console.error("Duplicate key recovery failed:", innerErr);
+      }
+    }
+
+    console.error("Record transit damage error:", error);
+    return res.status(500).json({
+      message: "Internal server error",
+    });
+  } finally {
+    client.release();
   }
 };
 
@@ -1199,4 +1452,5 @@ module.exports = {
   getTripStock,
   reconcileTrip,
   startTrip,
+  recordTransitDamage,
 };

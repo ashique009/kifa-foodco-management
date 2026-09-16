@@ -1,5 +1,6 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
+const { verifyTripAccess, getStaffIdForUser } = require("../middleware/authorize");
 
 // Helper to retrieve an existing return with all items for idempotency
 const getExistingReturnWithItems = async (dbClientOrPool, idempotencyKey) => {
@@ -151,7 +152,13 @@ const createReturn = async (req, res) => {
       }
     }
 
-    // Check trip
+    // Check trip and authorization
+    const access = await verifyTripAccess(trip_id, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
     const tripResult = await client.query(
       `
       SELECT id, status
@@ -162,13 +169,7 @@ const createReturn = async (req, res) => {
       [trip_id]
     );
 
-    if (tripResult.rows.length === 0) {
-      await client.query("ROLLBACK");
-
-      return res.status(404).json({
-        message: "Trip not found",
-      });
-    }
+    const trip = tripResult.rows[0];
 
     // Check shop belongs to trip
     const tripShopResult = await client.query(
@@ -598,8 +599,7 @@ const createReturn = async (req, res) => {
 // GET ALL RETURNS
 const getReturns = async (req, res) => {
   try {
-    const result = await pool.query(
-      `
+    let query = `
       SELECT
         r.*,
         s.shop_name,
@@ -622,10 +622,27 @@ const getReturns = async (req, res) => {
       JOIN shops s ON s.id = r.shop_id
       LEFT JOIN return_items ri ON ri.return_id = r.id
       LEFT JOIN products p ON p.id = ri.product_id
+    `;
+    const params = [];
+
+    // If caller is STAFF, only return returns for trips assigned to them
+    if (req.user && req.user.role !== "admin") {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.json({ returns: [] });
+      }
+      query += ` WHERE r.trip_id IN (
+        SELECT id FROM trips WHERE driver_id = $1 OR sales_staff_id = $1
+      ) `;
+      params.push(staffId);
+    }
+
+    query += `
       GROUP BY r.id, s.shop_name
       ORDER BY r.return_date DESC, r.created_at DESC
-      `
-    );
+    `;
+
+    const result = await pool.query(query, params);
 
     res.json({
       returns: result.rows,

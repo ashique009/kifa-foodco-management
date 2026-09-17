@@ -21,6 +21,7 @@ import {
   Purchase,
   BusinessAlert,
   TripStatus,
+  TripShop,
   ShopLedgerEntry,
   ProductUnit,
 } from '../types';
@@ -118,6 +119,17 @@ interface BakeryContextType {
   deleteProduct: (id: string) => Promise<void>;
   isProductInUse: (id: string) => boolean;
   addShop: (shop: Omit<Shop, 'id' | 'totalSales' | 'totalCollected' | 'createdAt'>) => Promise<void>;
+  addShopToActiveTrip: (
+    tripId: string,
+    shopData?: {
+      name: string;
+      owner?: string;
+      phone?: string;
+      address?: string;
+      creditLimit?: number;
+    },
+    existingShopId?: string
+  ) => Promise<{ success: boolean; shopId?: string }>;
   updateShop: (id: string, shop: Partial<Shop>) => void;
   addVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>;
   updateVehicle: (id: string, vehicle: Partial<Vehicle>) => void;
@@ -777,9 +789,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         return null;
       }
 
-      // Ensure shop is assigned to trip
-      await tripsApi.addShop(activeTripId, { shop_id: saleData.shopId }).catch(() => {});
-
       // Fetch current trip stock to map batch_id
       let tripStockList: any[] = [];
       try {
@@ -902,9 +911,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       let reasonCode: 'shop_return' | 'damaged' | 'expired' = 'shop_return';
       if (returnData.reason === 'Damaged') reasonCode = 'damaged';
       else if (returnData.reason === 'Expired') reasonCode = 'expired';
-
-      // Ensure shop is attached to trip
-      await tripsApi.addShop(activeTripId, { shop_id: returnData.shopId }).catch(() => {});
 
       await returnsApi.create({
         trip_id: activeTripId,
@@ -1035,6 +1041,112 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       await refreshAllData();
     } catch (err: any) {
       showToast('error', 'Failed to Add Shop', err.message);
+    }
+  };
+
+  const addShopToActiveTrip = async (
+    tripId: string,
+    shopData?: {
+      name: string;
+      owner?: string;
+      phone?: string;
+      address?: string;
+      creditLimit?: number;
+    },
+    existingShopId?: string
+  ): Promise<{ success: boolean; shopId?: string }> => {
+    try {
+      let createdShop: any = null;
+      let tripShopRow: any = null;
+
+      if (existingShopId) {
+        // Assign existing shop to active trip
+        const target = shops.find((s) => s.id === existingShopId);
+        const res = await tripsApi.addShop(tripId, { shop_id: existingShopId });
+        tripShopRow = res.trip_shop;
+        createdShop = target
+          ? {
+              id: target.id,
+              shop_name: target.name,
+              owner_name: target.owner,
+              phone: target.phone,
+              address: target.address,
+            }
+          : null;
+      } else if (shopData) {
+        // Create new shop atomically and attach to trip
+        const res = await tripsApi.addNewShop(tripId, {
+          shop_name: shopData.name,
+          owner_name: shopData.owner,
+          phone: shopData.phone,
+          address: shopData.address,
+          credit_limit: shopData.creditLimit,
+        });
+        createdShop = res.shop;
+        tripShopRow = res.trip_shop;
+
+        if (createdShop) {
+          const newShopModel: Shop = {
+            id: createdShop.id,
+            name: createdShop.shop_name,
+            owner: createdShop.owner_name || '',
+            phone: createdShop.phone || '',
+            address: createdShop.address || '',
+            route: createdShop.route || 'General Route',
+            outstanding: 0,
+            creditLimit: Number(createdShop.credit_limit || 0),
+            totalSales: 0,
+            totalCollected: 0,
+            createdAt: createdShop.created_at || new Date().toISOString(),
+          };
+          setShops((prev) => [newShopModel, ...prev.filter((s) => s.id !== newShopModel.id)]);
+        }
+      } else {
+        throw new Error('Shop data or existing shop ID is required');
+      }
+
+      const shopIdToUse = createdShop?.id || existingShopId || tripShopRow?.shop_id;
+      const targetShop =
+        shops.find((s) => s.id === shopIdToUse) ||
+        (createdShop
+          ? {
+              name: createdShop.shop_name,
+              owner: createdShop.owner_name,
+              phone: createdShop.phone,
+              address: createdShop.address,
+            }
+          : null);
+
+      // Scoped update: update trip's shops in trips state
+      setTrips((prevTrips) =>
+        prevTrips.map((t) => {
+          if (t.id !== tripId) return t;
+          const nextSeq = tripShopRow?.visit_order || t.shops.length + 1;
+          const newTripShop: TripShop = {
+            shopId: shopIdToUse,
+            shopName: targetShop?.name || 'New Shop',
+            ownerName: targetShop?.owner || '',
+            phone: targetShop?.phone || '',
+            address: targetShop?.address || '',
+            sequence: nextSeq,
+            status: 'pending',
+          };
+          // Avoid duplicate entry if already present
+          if (t.shops.some((s) => s.shopId === shopIdToUse)) return t;
+          return {
+            ...t,
+            shops: [...t.shops, newTripShop],
+          };
+        })
+      );
+
+      showToast('success', 'Shop Added to Trip', `${targetShop?.name || 'Shop'} added to active route.`);
+      return { success: true, shopId: shopIdToUse };
+    } catch (err: any) {
+      console.error('Add shop to active trip error:', err);
+      const msg = err.response?.data?.message || err.message || 'Failed to add shop to trip';
+      showToast('error', 'Add Shop Failed', msg);
+      return { success: false };
     }
   };
 
@@ -1351,6 +1463,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         deleteProduct,
         isProductInUse,
         addShop,
+        addShopToActiveTrip,
         updateShop,
         addVehicle,
         updateVehicle,

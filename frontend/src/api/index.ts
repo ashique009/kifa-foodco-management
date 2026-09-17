@@ -165,6 +165,21 @@ export const tripsApi = {
       visit_order?: number;
     }
   ) => api.post<{ message: string; trip_shop: any }>(`/api/trips/${tripId}/shops`, data),
+  addNewShop: (
+    tripId: string,
+    data: {
+      shop_name: string;
+      owner_name?: string;
+      phone?: string;
+      address?: string;
+      credit_limit?: number;
+      visit_order?: number;
+    }
+  ) =>
+    api.post<{ message: string; shop: any; trip_shop: any }>(
+      `/api/trips/${tripId}/shops/new`,
+      data
+    ),
   getShops: (tripId: string) =>
     api.get<{ shops: any[] }>(`/api/trips/${tripId}/shops`),
   markShopVisited: (tripId: string, shopId: string) =>

@@ -192,10 +192,16 @@ export const RecordReturnModal: React.FC<RecordReturnModalProps> = ({
         </div>
 
         <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
-          <Button type="button" variant="secondary" size="md" onClick={onClose}>
+          <Button type="button" variant="secondary" size="md" onClick={onClose} disabled={isSubmitting}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" size="md" disabled={isSubmitting || quantity <= 0}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            isLoading={isSubmitting}
+            disabled={isSubmitting || quantity <= 0}
+          >
             {isSubmitting ? 'Processing Return...' : 'Save Return'}
           </Button>
         </div>

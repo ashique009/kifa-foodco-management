@@ -21,6 +21,7 @@ import {
   Sparkles,
   Check,
   AlertTriangle,
+  Plus,
 } from 'lucide-react';
 import { TripStatus, TripLoadedItem } from '../types';
 
@@ -35,9 +36,36 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   onBack,
   onOpenShopVisit,
 }) => {
-  const { trips, updateTripStatus, markShopVisited, sales, payments, returns, recordTransitDamage } = useBakery();
+  const {
+    trips,
+    shops,
+    updateTripStatus,
+    markShopVisited,
+    sales,
+    payments,
+    returns,
+    recordTransitDamage,
+    addShopToActiveTrip,
+  } = useBakery();
   const [activeTab, setActiveTab] = useState<'shops' | 'stock'>('shops');
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+
+  // Status transition & action loading states
+  const [isStatusUpdating, setIsStatusUpdating] = useState(false);
+  const [isCompletingTrip, setIsCompletingTrip] = useState(false);
+  const [visitedLoadingMap, setVisitedLoadingMap] = useState<{ [shopId: string]: boolean }>({});
+
+  // Add Shop to Active Trip Modal state
+  const [isAddShopModalOpen, setIsAddShopModalOpen] = useState(false);
+  const [addShopTab, setAddShopTab] = useState<'new' | 'existing'>('new');
+  const [newShopName, setNewShopName] = useState('');
+  const [newOwnerName, setNewOwnerName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newAddress, setNewAddress] = useState('');
+  const [newCreditLimit, setNewCreditLimit] = useState('');
+  const [selectedExistingShopId, setSelectedExistingShopId] = useState('');
+  const [isSubmittingAddShop, setIsSubmittingAddShop] = useState(false);
+  const [addShopError, setAddShopError] = useState('');
 
   // Transit Damage Modal state
   const [isDamageModalOpen, setIsDamageModalOpen] = useState(false);
@@ -65,6 +93,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   const completedShops = completedShopsList.length;
   const totalShops = trip.shops.length;
   const allCompleted = completedShops === totalShops && totalShops > 0;
+  const unassignedShops = shops.filter((s) => !trip.shops.some((ts) => ts.shopId === s.id));
 
   // The very next shop to visit
   const nextShop = pendingShopsList[0];
@@ -127,11 +156,22 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
     }
   };
 
-  const handleStatusTransition = () => {
+  const handleStatusTransition = async () => {
+    if (isStatusUpdating) return;
     if (trip.status === 'Draft') {
-      updateTripStatus(trip.id, 'Loaded');
+      setIsStatusUpdating(true);
+      try {
+        await updateTripStatus(trip.id, 'Loaded');
+      } finally {
+        setIsStatusUpdating(false);
+      }
     } else if (trip.status === 'Loaded') {
-      updateTripStatus(trip.id, 'In Progress');
+      setIsStatusUpdating(true);
+      try {
+        await updateTripStatus(trip.id, 'In Progress');
+      } finally {
+        setIsStatusUpdating(false);
+      }
     } else if (trip.status === 'In Progress') {
       if (allCompleted) {
         setIsCompleteDialogOpen(true);
@@ -141,9 +181,78 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
     }
   };
 
-  const handleConfirmComplete = () => {
-    updateTripStatus(trip.id, 'Completed');
-    setIsCompleteDialogOpen(false);
+  const handleConfirmComplete = async () => {
+    if (isCompletingTrip) return;
+    setIsCompletingTrip(true);
+    try {
+      await updateTripStatus(trip.id, 'Completed');
+      setIsCompleteDialogOpen(false);
+    } finally {
+      setIsCompletingTrip(false);
+    }
+  };
+
+  const handleMarkVisited = async (shopId: string) => {
+    if (visitedLoadingMap[shopId]) return;
+    setVisitedLoadingMap((prev) => ({ ...prev, [shopId]: true }));
+    try {
+      await markShopVisited(trip.id, shopId);
+    } finally {
+      setVisitedLoadingMap((prev) => ({ ...prev, [shopId]: false }));
+    }
+  };
+
+  const handleAddShopToTripSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSubmittingAddShop) return;
+
+    setAddShopError('');
+
+    if (addShopTab === 'new') {
+      if (!newShopName.trim()) {
+        setAddShopError('Shop name is required');
+        return;
+      }
+      setIsSubmittingAddShop(true);
+      try {
+        const result = await addShopToActiveTrip(trip.id, {
+          name: newShopName.trim(),
+          owner: newOwnerName.trim() || undefined,
+          phone: newPhone.trim() || undefined,
+          address: newAddress.trim() || undefined,
+          creditLimit: newCreditLimit ? Number(newCreditLimit) : 0,
+        });
+        if (result.success) {
+          setIsAddShopModalOpen(false);
+          setNewShopName('');
+          setNewOwnerName('');
+          setNewPhone('');
+          setNewAddress('');
+          setNewCreditLimit('');
+        }
+      } catch (err: any) {
+        setAddShopError(err.message || 'Failed to add shop to trip');
+      } finally {
+        setIsSubmittingAddShop(false);
+      }
+    } else {
+      if (!selectedExistingShopId) {
+        setAddShopError('Please select an existing shop to add');
+        return;
+      }
+      setIsSubmittingAddShop(true);
+      try {
+        const result = await addShopToActiveTrip(trip.id, undefined, selectedExistingShopId);
+        if (result.success) {
+          setIsAddShopModalOpen(false);
+          setSelectedExistingShopId('');
+        }
+      } catch (err: any) {
+        setAddShopError(err.message || 'Failed to add shop to trip');
+      } finally {
+        setIsSubmittingAddShop(false);
+      }
+    }
   };
 
   return (
@@ -170,9 +279,11 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
               variant="accent"
               size="md"
               leftIcon={<PackageCheck className="w-4 h-4" />}
+              isLoading={isStatusUpdating}
+              disabled={isStatusUpdating}
               onClick={handleStatusTransition}
             >
-              Load Stock
+              {isStatusUpdating ? 'Loading Stock...' : 'Load Stock'}
             </Button>
           )}
           {trip.status === 'Loaded' && (
@@ -180,9 +291,11 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
               variant="accent"
               size="md"
               leftIcon={<Play className="w-4 h-4 fill-current" />}
+              isLoading={isStatusUpdating}
+              disabled={isStatusUpdating}
               onClick={handleStatusTransition}
             >
-              Start Trip
+              {isStatusUpdating ? 'Starting Trip...' : 'Start Trip'}
             </Button>
           )}
           {trip.status === 'In Progress' && (
@@ -201,6 +314,8 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                 variant={allCompleted ? 'success' : 'secondary'}
                 size="md"
                 leftIcon={<CheckCheck className="w-4 h-4" />}
+                isLoading={isCompletingTrip}
+                disabled={isCompletingTrip}
                 onClick={() => setIsCompleteDialogOpen(true)}
               >
                 Complete Trip
@@ -380,6 +495,56 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
       {/* Tab 1: Shop Stops Grouped into Pending & Completed (Section 2) */}
       {activeTab === 'shops' && (
         <div className="space-y-5">
+          {/* Action Bar for Route Shops */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div>
+              <span className="text-xs font-bold text-slate-800">
+                Route Shops ({completedShops}/{totalShops})
+              </span>
+              <p className="text-[11px] text-slate-500">
+                {trip.status === 'Completed' || trip.status === 'Cancelled'
+                  ? 'Trip is completed'
+                  : 'Add an unplanned shop to this active route or record visits'}
+              </p>
+            </div>
+            {trip.status !== 'Completed' && trip.status !== 'Cancelled' && (
+              <Button
+                variant="accent"
+                size="sm"
+                leftIcon={<Plus className="w-4 h-4" />}
+                onClick={() => {
+                  setAddShopError('');
+                  setIsAddShopModalOpen(true);
+                }}
+              >
+                + Add Shop to Route
+              </Button>
+            )}
+          </div>
+
+          {totalShops === 0 && (
+            <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-300 p-6 space-y-3">
+              <Store className="w-8 h-8 text-slate-400 mx-auto" />
+              <p className="text-sm font-semibold text-slate-700">No shops assigned to this trip yet.</p>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                Add an unplanned shop to this route now to begin recording deliveries and sales.
+              </p>
+              {trip.status !== 'Completed' && trip.status !== 'Cancelled' && (
+                <Button
+                  variant="accent"
+                  size="sm"
+                  leftIcon={<Plus className="w-4 h-4" />}
+                  onClick={() => {
+                    setAddShopError('');
+                    setIsAddShopModalOpen(true);
+                  }}
+                >
+                  + Add First Shop to Route
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* PENDING SHOPS */}
           {pendingShopsList.length > 0 && (
             <div className="space-y-2.5">
@@ -435,9 +600,11 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                           variant="secondary"
                           className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 text-xs px-2.5 font-medium"
                           leftIcon={<Check className="w-3.5 h-3.5" />}
+                          isLoading={Boolean(visitedLoadingMap[shop.shopId])}
+                          disabled={Boolean(visitedLoadingMap[shop.shopId])}
                           onClick={(e) => {
                             e.stopPropagation();
-                            markShopVisited(trip.id, shop.shopId);
+                            handleMarkVisited(shop.shopId);
                           }}
                         >
                           Mark Visited
@@ -652,9 +819,11 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
               size="lg"
               className="w-full shadow-md font-bold py-3"
               leftIcon={<PackageCheck className="w-4 h-4" />}
+              isLoading={isStatusUpdating}
+              disabled={isStatusUpdating}
               onClick={handleStatusTransition}
             >
-              Load Stock
+              {isStatusUpdating ? 'Loading Stock...' : 'Load Stock'}
             </Button>
           )}
           {trip.status === 'Loaded' && (
@@ -663,9 +832,11 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
               size="lg"
               className="w-full shadow-md font-bold py-3"
               leftIcon={<Play className="w-4 h-4 fill-current" />}
+              isLoading={isStatusUpdating}
+              disabled={isStatusUpdating}
               onClick={handleStatusTransition}
             >
-              Start Trip
+              {isStatusUpdating ? 'Starting Trip...' : 'Start Trip'}
             </Button>
           )}
           {trip.status === 'In Progress' && (
@@ -686,6 +857,8 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                   size="lg"
                   className="w-full shadow-md font-bold py-3"
                   leftIcon={<CheckCheck className="w-4 h-4" />}
+                  isLoading={isCompletingTrip}
+                  disabled={isCompletingTrip}
                   onClick={() => setIsCompleteDialogOpen(true)}
                 >
                   Complete Trip ✓
@@ -699,8 +872,9 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
       {/* Complete Trip Confirmation Modal */}
       <ConfirmDialog
         isOpen={isCompleteDialogOpen}
-        onClose={() => setIsCompleteDialogOpen(false)}
+        onClose={() => !isCompletingTrip && setIsCompleteDialogOpen(false)}
         onConfirm={handleConfirmComplete}
+        isLoading={isCompletingTrip}
         title={allCompleted ? 'Complete and Reconcile Trip?' : 'Complete Trip with Pending Shops?'}
         message={
           allCompleted
@@ -710,6 +884,189 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
         confirmText={allCompleted ? 'Complete Trip' : 'Complete with Pending Shops'}
         variant={allCompleted ? 'primary' : 'danger'}
       />
+
+      {/* Add Shop to Trip Route Modal */}
+      <Modal
+        isOpen={isAddShopModalOpen}
+        onClose={() => {
+          if (!isSubmittingAddShop) {
+            setIsAddShopModalOpen(false);
+            setAddShopError('');
+          }
+        }}
+        title="Add Shop to Trip Route"
+        maxWidth="md"
+      >
+        <form onSubmit={handleAddShopToTripSubmit} className="space-y-4 text-xs">
+          {/* Tab Selection between New Shop and Existing Registered Shop */}
+          <div className="flex border-b border-slate-200">
+            <button
+              type="button"
+              onClick={() => {
+                setAddShopTab('new');
+                setAddShopError('');
+              }}
+              className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-colors ${
+                addShopTab === 'new'
+                  ? 'border-[#172554] text-[#172554]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              + Create &amp; Add New Shop
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAddShopTab('existing');
+                setAddShopError('');
+              }}
+              className={`pb-2.5 px-3 text-xs font-bold border-b-2 transition-colors ${
+                addShopTab === 'existing'
+                  ? 'border-[#172554] text-[#172554]'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              Select Existing Shop ({unassignedShops.length})
+            </button>
+          </div>
+
+          {addShopTab === 'new' ? (
+            <div className="space-y-3 pt-1">
+              <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg text-amber-800 text-[11px]">
+                Encountered an unplanned shop on route? Enter the shop details below. It will be registered in the system and automatically attached as a valid stop on this active trip.
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Shop Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newShopName}
+                  onChange={(e) => setNewShopName(e.target.value)}
+                  placeholder="e.g. Malabar Bakery &amp; Sweets"
+                  className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Owner Name</label>
+                  <input
+                    type="text"
+                    value={newOwnerName}
+                    onChange={(e) => setNewOwnerName(e.target.value)}
+                    placeholder="e.g. Rajesh Kumar"
+                    className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">Phone Number</label>
+                  <input
+                    type="tel"
+                    value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    placeholder="e.g. 9876543210"
+                    className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Address / Landmark</label>
+                <input
+                  type="text"
+                  value={newAddress}
+                  onChange={(e) => setNewAddress(e.target.value)}
+                  placeholder="e.g. Near Bus Stand, Main Road"
+                  className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Credit Limit (₹)</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={newCreditLimit}
+                  onChange={(e) => setNewCreditLimit(e.target.value)}
+                  placeholder="0"
+                  className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-1">
+              <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-lg text-blue-900 text-[11px]">
+                Choose an already registered shop from your directory that was not originally scheduled for today's trip.
+              </div>
+
+              {unassignedShops.length === 0 ? (
+                <div className="p-4 text-center text-slate-500 border border-dashed border-slate-200 rounded-lg">
+                  All active registered shops are already assigned to this trip.
+                </div>
+              ) : (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Select Shop <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={selectedExistingShopId}
+                    onChange={(e) => setSelectedExistingShopId(e.target.value)}
+                    required
+                    className="w-full rounded-lg border border-slate-300 p-2 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  >
+                    <option value="">-- Choose registered shop --</option>
+                    {unassignedShops.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {s.owner ? `(${s.owner})` : ''} {s.phone ? `- ${s.phone}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {addShopError && (
+            <div className="rounded-lg bg-rose-50 border border-rose-200 p-2.5 text-xs text-rose-700 font-medium">
+              {addShopError}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={isSubmittingAddShop}
+              onClick={() => {
+                setIsAddShopModalOpen(false);
+                setAddShopError('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="accent"
+              size="sm"
+              isLoading={isSubmittingAddShop}
+              disabled={
+                isSubmittingAddShop ||
+                (addShopTab === 'new' ? !newShopName.trim() : !selectedExistingShopId)
+              }
+            >
+              {isSubmittingAddShop
+                ? 'Adding to Route...'
+                : addShopTab === 'new'
+                ? 'Create & Add to Route'
+                : 'Add to Route'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* Record Transit Damage Modal */}
       <Modal
@@ -808,6 +1165,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
               type="submit"
               variant="primary"
               size="sm"
+              isLoading={isSubmittingDamage}
               disabled={isSubmittingDamage || !damageProductId || !damageQty}
               className="bg-rose-600 hover:bg-rose-700 border-rose-600 text-white"
             >

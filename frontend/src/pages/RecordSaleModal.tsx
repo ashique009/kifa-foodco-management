@@ -595,6 +595,7 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
               variant="accent"
               size="lg"
               className="flex-2 py-3 font-bold shadow-md"
+              isLoading={isSubmitting}
               disabled={isSubmitting || hasInvalidQuantity || !activeTrip || (!initialShopId && !selectedShopId)}
             >
               {isSubmitting ? 'Processing Sale...' : 'Complete Sale'}
@@ -804,6 +805,7 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
               type="submit"
               variant="accent"
               size="md"
+              isLoading={isSubmitting}
               disabled={isSubmitting || (!initialShopId && !selectedShopId) || items.length === 0 || hasInvalidQuantity || !activeTrip}
             >
               {isSubmitting ? 'Processing Sale...' : `Complete Sale (₹${total.toLocaleString('en-IN')})`}

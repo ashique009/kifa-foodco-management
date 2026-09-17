@@ -32,27 +32,34 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ onSelectShop }) => {
       s.route.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAddShopSubmit = (e: React.FormEvent) => {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleAddShopSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !owner || !phone) return;
+    if (isSubmitting || !name || !owner || !phone) return;
 
-    addShop({
-      name,
-      owner,
-      phone,
-      address: address || `${name}, Main Road`,
-      route,
-      creditLimit,
-      outstanding: initialOutstanding,
-    });
+    setIsSubmitting(true);
+    try {
+      await addShop({
+        name,
+        owner,
+        phone,
+        address: address || `${name}, Main Road`,
+        route,
+        creditLimit,
+        outstanding: initialOutstanding,
+      });
 
-    // Reset
-    setName('');
-    setOwner('');
-    setPhone('');
-    setAddress('');
-    setInitialOutstanding(0);
-    setIsAddModalOpen(false);
+      // Reset
+      setName('');
+      setOwner('');
+      setPhone('');
+      setAddress('');
+      setInitialOutstanding(0);
+      setIsAddModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -248,12 +255,19 @@ export const ShopsPage: React.FC<ShopsPageProps> = ({ onSelectShop }) => {
               type="button"
               variant="secondary"
               size="md"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="md">
-              Save Shop
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              isLoading={isSubmitting}
+              disabled={isSubmitting || !name || !owner || !phone}
+            >
+              {isSubmitting ? 'Saving Shop...' : 'Save Shop'}
             </Button>
           </div>
         </form>

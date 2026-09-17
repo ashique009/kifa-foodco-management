@@ -578,6 +578,11 @@ const addShopToTrip = async (req, res) => {
     const { tripId } = req.params;
     const { shop_id, visit_order } = req.body;
 
+    // If shop_name is provided instead of shop_id, route to createAndAddShopToTrip
+    if (!shop_id && req.body.shop_name) {
+      return createAndAddShopToTrip(req, res);
+    }
+
     if (!shop_id) {
       return res.status(400).json({
         message: "Shop ID is required",
@@ -592,13 +597,10 @@ const addShopToTrip = async (req, res) => {
 
     const trip = access.trip;
 
-    // Only draft trips can have shops added
-    if (
-      trip.status !== "draft" &&
-      trip.status !== "loaded"
-    ) {
+    // Active (in_progress) as well as draft and loaded trips can have shops added
+    if (!["draft", "loaded", "in_progress"].includes(trip.status)) {
       return res.status(400).json({
-        message: "Shop can only be added while the trip is being prepared",
+        message: `Cannot add shop to a ${trip.status} trip`,
       });
     }
 
@@ -619,6 +621,33 @@ const addShopToTrip = async (req, res) => {
       });
     }
 
+    // Explicit duplicate check
+    const existingCheck = await pool.query(
+      `
+      SELECT id
+      FROM trip_shops
+      WHERE trip_id = $1
+      AND shop_id = $2
+      `,
+      [tripId, shop_id]
+    );
+
+    if (existingCheck.rows.length > 0) {
+      return res.status(409).json({
+        message: "Shop is already added to this trip",
+      });
+    }
+
+    // Determine next visit order if not provided
+    let order = visit_order;
+    if (!order) {
+      const maxOrderRes = await pool.query(
+        `SELECT COALESCE(MAX(visit_order), 0) + 1 AS next_order FROM trip_shops WHERE trip_id = $1`,
+        [tripId]
+      );
+      order = maxOrderRes.rows[0]?.next_order || 1;
+    }
+
     // Add shop to trip
     const result = await pool.query(
       `
@@ -633,7 +662,7 @@ const addShopToTrip = async (req, res) => {
       [
         tripId,
         shop_id,
-        visit_order || null,
+        order,
       ]
     );
 
@@ -654,6 +683,125 @@ const addShopToTrip = async (req, res) => {
     res.status(500).json({
       message: "Internal server error",
     });
+  }
+};
+
+// CREATE NEW SHOP AND ATTACH TO TRIP (Atomic transaction)
+const createAndAddShopToTrip = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { tripId } = req.params;
+    const {
+      shop_name,
+      owner_name,
+      phone,
+      address,
+      credit_limit = 0,
+      visit_order,
+    } = req.body;
+
+    if (!shop_name || !shop_name.trim()) {
+      return res.status(400).json({
+        message: "Shop name is required",
+      });
+    }
+
+    if (Number(credit_limit) < 0) {
+      return res.status(400).json({
+        message: "Credit limit cannot be negative",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    // Check trip exists and authorization
+    const access = await verifyTripAccess(tripId, req, client);
+    if (!access.authorized) {
+      await client.query("ROLLBACK");
+      return res.status(access.status).json({ message: access.message });
+    }
+
+    const trip = access.trip;
+
+    // Active (in_progress) as well as draft and loaded trips can have shops added
+    if (!["draft", "loaded", "in_progress"].includes(trip.status)) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: `Cannot add shop to a ${trip.status} trip`,
+      });
+    }
+
+    // 1. Create shop
+    const shopResult = await client.query(
+      `
+      INSERT INTO shops (
+        shop_name,
+        owner_name,
+        phone,
+        address,
+        credit_limit
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING *
+      `,
+      [
+        shop_name.trim(),
+        owner_name ? owner_name.trim() : null,
+        phone ? phone.trim() : null,
+        address ? address.trim() : null,
+        Number(credit_limit) || 0,
+      ]
+    );
+
+    const newShop = shopResult.rows[0];
+
+    // 2. Determine visit order
+    let order = visit_order;
+    if (!order) {
+      const maxOrderRes = await client.query(
+        `SELECT COALESCE(MAX(visit_order), 0) + 1 AS next_order FROM trip_shops WHERE trip_id = $1`,
+        [tripId]
+      );
+      order = maxOrderRes.rows[0]?.next_order || 1;
+    }
+
+    // 3. Attach newly created shop to trip
+    const tripShopResult = await client.query(
+      `
+      INSERT INTO trip_shops (
+        trip_id,
+        shop_id,
+        visit_order
+      )
+      VALUES ($1, $2, $3)
+      RETURNING *
+      `,
+      [tripId, newShop.id, order]
+    );
+
+    await client.query("COMMIT");
+
+    res.status(201).json({
+      message: "Shop created and added to trip successfully",
+      shop: newShop,
+      trip_shop: tripShopResult.rows[0],
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Create and add shop to trip error:", error);
+
+    if (error.code === "23505") {
+      return res.status(409).json({
+        message: "Shop is already added to this trip",
+      });
+    }
+
+    res.status(500).json({
+      message: "Internal server error",
+    });
+  } finally {
+    client.release();
   }
 };
 
@@ -1453,4 +1601,5 @@ module.exports = {
   reconcileTrip,
   startTrip,
   recordTransitDamage,
+  createAndAddShopToTrip,
 };

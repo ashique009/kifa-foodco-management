@@ -11,6 +11,7 @@ const {
   reconcileTrip,
   startTrip,
   recordTransitDamage,
+  createAndAddShopToTrip,
 } = require("../controllers/tripController");
 
 const authenticateToken = require("../middleware/auth");
@@ -26,6 +27,7 @@ router.get("/", getTrips);
 router.post("/:tripId/load", validateUuidParam("tripId"), loadStock);
 router.post("/:tripId/start", validateUuidParam("tripId"), startTrip);
 router.post("/:tripId/shops", validateUuidParam("tripId"), addShopToTrip);
+router.post("/:tripId/shops/new", validateUuidParam("tripId"), createAndAddShopToTrip);
 router.get("/:tripId/shops", validateUuidParam("tripId"), getTripShops);
 router.post(
   "/:tripId/shops/:shopId/visit",

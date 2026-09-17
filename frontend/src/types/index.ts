@@ -53,10 +53,12 @@ export type StaffStatus = 'Available' | 'On Trip' | 'Off Duty' | 'Inactive';
 export interface Staff {
   id: string;
   name: string;
+  username?: string;
   role: StaffRole;
   phone: string;
   status: StaffStatus;
   isActive?: boolean;
+  userId?: string;
 }
 
 export type TripStatus = 'Draft' | 'Loaded' | 'In Progress' | 'Completed' | 'Cancelled';

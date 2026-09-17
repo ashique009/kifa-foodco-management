@@ -121,7 +121,7 @@ interface BakeryContextType {
   updateShop: (id: string, shop: Partial<Shop>) => void;
   addVehicle: (vehicle: Omit<Vehicle, 'id'>) => Promise<void>;
   updateVehicle: (id: string, vehicle: Partial<Vehicle>) => void;
-  addStaff: (staffMember: Omit<Staff, 'id'>) => Promise<void>;
+  addStaff: (staffMember: Omit<Staff, 'id'> & { username?: string; password?: string; confirmPassword?: string; designation?: string }) => Promise<void>;
   updateStaff: (id: string, staffMember: Partial<Staff>) => void;
   archiveStaff: (id: string) => Promise<void>;
   deleteStaff: (id: string) => Promise<void>;
@@ -357,10 +357,12 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         (staffRes.staff || []).map((s: any) => ({
           id: s.id,
           name: s.name,
+          username: s.username || '',
           role: mapBackendStaffRole(s.role),
           phone: s.phone || '',
           status: s.is_available ? 'Available' : 'On Trip',
           isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
+          userId: s.user_id,
         }))
       );
 
@@ -1060,17 +1062,52 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   };
 
   // 9. Staff CRUD
-  const addStaff = async (staffData: Omit<Staff, 'id'>) => {
+  const addStaff = async (staffData: Omit<Staff, 'id'> & { username?: string; password?: string; confirmPassword?: string; designation?: string }) => {
     try {
-      await staffApi.create({
+      const res = await staffApi.create({
         name: staffData.name,
         phone: staffData.phone,
+        username: staffData.username,
+        password: staffData.password,
+        confirmPassword: staffData.confirmPassword,
         role: mapStaffRoleToBackend(staffData.role),
+        designation: staffData.designation,
       });
-      showToast('success', 'Staff Member Added', `${staffData.name} registered.`);
-      await refreshAllData();
+
+      if (res?.staff?.id && res?.staff?.name) {
+        const s = res.staff;
+        const newStaffMember: Staff = {
+          id: s.id,
+          name: s.name,
+          username: s.username || '',
+          role: mapBackendStaffRole(s.role),
+          phone: s.phone || '',
+          status: s.is_available ? 'Available' : 'On Trip',
+          isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
+          userId: s.user_id,
+        };
+        setStaff((prev) => [newStaffMember, ...prev.filter((item) => item.id !== newStaffMember.id)]);
+      } else {
+        // Scoped fallback: Refetch only staff if response lacks complete fields
+        const staffRes = await staffApi.getAll().catch(() => ({ staff: [] }));
+        setStaff(
+          (staffRes.staff || []).map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            username: s.username || '',
+            role: mapBackendStaffRole(s.role),
+            phone: s.phone || '',
+            status: s.is_available ? 'Available' : 'On Trip',
+            isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
+            userId: s.user_id,
+          }))
+        );
+      }
+
+      showToast('success', 'User Created', `${staffData.name} registered successfully.`);
     } catch (err: any) {
-      showToast('error', 'Failed to Add Staff', err.message);
+      showToast('error', 'Failed to Create User', err.message);
+      throw err;
     }
   };
 

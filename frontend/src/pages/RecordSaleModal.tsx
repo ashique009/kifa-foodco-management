@@ -19,7 +19,7 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
   shopId: initialShopId,
   tripId,
 }) => {
-  const { shops, products, trips, recordSale, refreshAllData, showToast } = useBakery();
+  const { shops, products, trips, recordSale, showToast } = useBakery();
 
   const [selectedShopId, setSelectedShopId] = useState<string>(initialShopId || '');
   const [items, setItems] = useState<
@@ -89,7 +89,6 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
           : `sale-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
       isSubmittingRef.current = false;
       setIsSubmitting(false);
-      refreshAllData();
       setMobileStep(1);
       if (availableProducts.length > 0) {
         const firstProd = availableProducts[0];

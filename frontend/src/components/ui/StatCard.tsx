@@ -43,7 +43,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     <Card
       hoverEffect={!!onClick}
       onClick={onClick}
-      className={`p-5 relative overflow-hidden ${prominentCardStyles} ${
+      className={`p-3.5 sm:p-5 relative overflow-hidden ${prominentCardStyles} ${
         onClick ? 'cursor-pointer' : ''
       } ${className}`}
     >
@@ -51,9 +51,9 @@ export const StatCard: React.FC<StatCardProps> = ({
         <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600" />
       )}
 
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-1.5">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <p className={`text-xs font-semibold uppercase tracking-wider ${isProminent ? 'text-emerald-900' : 'text-slate-500'}`}>
               {title}
             </p>
@@ -63,11 +63,11 @@ export const StatCard: React.FC<StatCardProps> = ({
               </span>
             )}
           </div>
-          <div className={`mt-2 text-2xl sm:text-3xl font-extrabold tracking-tight ${isProminent ? 'text-emerald-700' : 'text-slate-900'}`}>
+          <div className={`mt-1.5 sm:mt-2 text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight truncate ${isProminent ? 'text-emerald-700' : 'text-slate-900'}`}>
             {value}
           </div>
         </div>
-        <div className={`p-2.5 rounded-lg ${iconBgStyles[accentColor]}`}>
+        <div className={`p-2 sm:p-2.5 rounded-lg shrink-0 ${iconBgStyles[accentColor]}`}>
           {icon}
         </div>
       </div>

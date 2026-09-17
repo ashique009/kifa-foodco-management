@@ -162,13 +162,13 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
           <label className="block text-xs font-semibold text-slate-700 mb-1.5">
             Payment Mode
           </label>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {(['Cash', 'UPI', 'Card', 'Bank Transfer'] as const).map((m) => (
               <button
                 type="button"
                 key={m}
                 onClick={() => setMethod(m)}
-                className={`py-2 px-1 rounded-lg text-center font-medium border text-xs transition-colors ${
+                className={`py-2 px-2 rounded-lg text-center font-medium border text-xs transition-colors truncate ${
                   method === m
                     ? 'bg-[#172554] text-white border-[#172554]'
                     : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'

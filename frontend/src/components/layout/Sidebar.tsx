@@ -17,6 +17,7 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import logoImg from '../../assets/logo.jpg';
 
@@ -96,20 +97,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center px-4 gap-3 border-b border-blue-900/50 bg-[#0F172A]">
-          <img
-            src={logoImg}
-            alt="Kifa Food Co."
-            className="w-9 h-9 rounded-lg object-contain shadow-xs shrink-0"
-          />
-          <div className="min-w-0 flex flex-col justify-center">
-            <span className="font-brand font-bold text-base tracking-wide text-white select-none truncate">
-              Kifa Food Co.
-            </span>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase mt-0.5 leading-none">
-              Distribution
-            </p>
+        <div className="h-16 flex items-center justify-between px-4 border-b border-blue-900/50 bg-[#0F172A]">
+          <div className="flex items-center gap-3 min-w-0">
+            <img
+              src={logoImg}
+              alt="Kifa Food Co."
+              className="w-9 h-9 rounded-lg object-contain shadow-xs shrink-0"
+            />
+            <div className="min-w-0 flex flex-col justify-center">
+              <span className="font-brand font-bold text-base tracking-wide text-white select-none truncate">
+                Kifa Food Co.
+              </span>
+              <p className="text-[10px] text-slate-400 font-medium tracking-wider uppercase mt-0.5 leading-none">
+                Distribution
+              </p>
+            </div>
           </div>
+          {onCloseMobile && (
+            <button
+              onClick={onCloseMobile}
+              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-blue-900/50 transition-colors"
+              aria-label="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Navigation List */}

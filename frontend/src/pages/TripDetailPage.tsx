@@ -568,7 +568,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                     }`}
                     onClick={() => onOpenShopVisit(shop.shopId)}
                   >
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <Circle
                           className={`w-5 h-5 shrink-0 ${
@@ -577,7 +577,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                         />
 
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-mono text-slate-400">
                               #{shop.sequence}
                             </span>
@@ -588,17 +588,17 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5 truncate">
                             {shop.ownerName} • {shop.phone}
                           </p>
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 self-end sm:self-center w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
                         <Button
                           size="sm"
                           variant="secondary"
-                          className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 text-xs px-2.5 font-medium"
+                          className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800 text-xs px-2.5 font-medium flex-1 sm:flex-none justify-center"
                           leftIcon={<Check className="w-3.5 h-3.5" />}
                           isLoading={Boolean(visitedLoadingMap[shop.shopId])}
                           disabled={Boolean(visitedLoadingMap[shop.shopId])}
@@ -612,6 +612,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                         <Button
                           size="sm"
                           variant={isCurrentNext ? 'accent' : 'secondary'}
+                          className="flex-1 sm:flex-none justify-center"
                           onClick={(e) => {
                             e.stopPropagation();
                             onOpenShopVisit(shop.shopId);
@@ -845,11 +846,11 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
                 <Button
                   variant="accent"
                   size="lg"
-                  className="flex-1 shadow-md font-bold py-3"
-                  rightIcon={<ArrowRight className="w-4 h-4" />}
+                  className="flex-1 shadow-md font-bold py-3 min-w-0"
+                  rightIcon={<ArrowRight className="w-4 h-4 shrink-0" />}
                   onClick={() => onOpenShopVisit(nextShop.shopId)}
                 >
-                  Continue Trip ({nextShop.shopName}) →
+                  <span className="truncate">Continue Trip ({nextShop.shopName})</span>
                 </Button>
               ) : (
                 <Button

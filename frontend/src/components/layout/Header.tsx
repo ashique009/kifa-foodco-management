@@ -75,13 +75,13 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Mobile mini brand mark */}
-        <div className="flex items-center gap-1.5 lg:hidden border-r border-slate-200 pr-2.5 mr-0.5">
+        <div className="flex items-center gap-1.5 lg:hidden border-r border-slate-200 pr-2 sm:pr-2.5 mr-0.5">
           <img
             src={logoImg}
             alt="Kifa Food Co."
             className="w-7 h-7 rounded-md object-contain shadow-2xs shrink-0"
           />
-          <div className="flex flex-col">
+          <div className="hidden xs:flex sm:flex flex-col">
             <span className="font-brand font-bold text-xs text-slate-900 tracking-wide leading-none">
               Kifa Food Co.
             </span>
@@ -91,8 +91,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        <div>
-          <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight leading-tight">
+        <div className="min-w-0">
+          <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight leading-tight truncate">
             {pageInfo.title}
           </h2>
           <p className="text-xs text-slate-500 hidden sm:block leading-none mt-0.5">
@@ -102,14 +102,15 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
 
       {/* Right section: Global Search, Alerts Bell, Profile */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
         {/* Global Search Button */}
         <button
           onClick={onOpenSearch}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 text-xs transition-colors"
+          className="flex items-center gap-2 p-2 sm:px-3 sm:py-1.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100 hover:text-slate-700 text-xs transition-colors"
           title="Search anything (Press /)"
+          aria-label="Quick Search"
         >
-          <Search className="w-3.5 h-3.5" />
+          <Search className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
           <span className="hidden md:inline">Quick Search...</span>
           <kbd className="hidden md:inline text-[10px] bg-white border border-slate-300 rounded px-1 text-slate-400 font-mono">
             ⌘K
@@ -127,7 +128,7 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
 
           {isAlertsOpen && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-dropdown border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-sm bg-white rounded-xl shadow-dropdown border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900 uppercase tracking-wide">
                   Notifications

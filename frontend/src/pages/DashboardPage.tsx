@@ -63,6 +63,29 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       ? 'Good Afternoon'
       : 'Good Evening';
 
+  const isAdmin = currentUser.userRole === 'admin';
+
+  // Subtitles scoped according to role
+  const collectionSubtitle = isAdmin
+    ? "Payments received today across all trips"
+    : "Collected today from your assigned trips";
+
+  const salesSubtitle = isAdmin
+    ? "Total sales recorded today across trips"
+    : "Sales recorded from your assigned trips";
+
+  const outstandingSubtitle = isAdmin
+    ? "Current total due from all shops"
+    : activeTrips.length > 0
+    ? "Due from your assigned shops"
+    : "No shops currently assigned";
+
+  const activeTripsSubtitle = isAdmin
+    ? `${activeTrips.length} vehicles currently on route`
+    : activeTrips.length > 0
+    ? `${activeTrips.length} of your assigned trips active`
+    : "No active trips assigned";
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10">
       {/* Header Greeting & Quick Operational Actions */}
@@ -72,7 +95,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             {greeting}, {currentUser.name}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Kifa Food Co. wholesale operations, dispatches & collection overview.
+            {isAdmin
+              ? 'Kifa Food Co. wholesale operations, dispatches & collection overview.'
+              : 'Your assigned delivery routes, dispatches & sales overview.'}
           </p>
         </div>
 
@@ -85,24 +110,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           >
             Record Sale
           </Button>
-          <Button
-            variant="accent"
-            size="sm"
-            leftIcon={<Plus className="w-4 h-4" />}
-            onClick={onOpenNewTrip}
-          >
-            Create Trip
-          </Button>
+          {isAdmin && (
+            <Button
+              variant="accent"
+              size="sm"
+              leftIcon={<Plus className="w-4 h-4" />}
+              onClick={onOpenNewTrip}
+            >
+              Create Trip
+            </Button>
+          )}
         </div>
       </div>
 
       {/* 
-        TOP 4 SUMMARY CARDS ONLY:
-        1. Today's Collection (Most Prominent - received today across all trips)
+        TOP 4 SUMMARY CARDS:
+        1. Today's Collection (Scoped to assigned trips for staff, company-wide for admin)
         2. Today's Sales
         3. Outstanding
         4. Active Trips
-        (NO lifetime total collection card)
       */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4">
         {/* Card 1: Today's Collection (Most Prominent) */}
@@ -110,7 +136,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           title="Today's Collection"
           value={`₹${todayCollectionTotal.toLocaleString('en-IN')}`}
           icon={<Wallet className="w-5 h-5" />}
-          subtitle="Payments received today across trips"
+          subtitle={collectionSubtitle}
           accentColor="green"
           isProminent={true}
           className="col-span-2 sm:col-span-1"
@@ -122,7 +148,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           title="Today's Sales"
           value={`₹${todaySalesTotal.toLocaleString('en-IN')}`}
           icon={<ShoppingBag className="w-5 h-5 text-[#172554]" />}
-          subtitle="Total sales recorded today"
+          subtitle={salesSubtitle}
           accentColor="primary"
           onClick={() => onNavigate('sales')}
         />
@@ -132,7 +158,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           title="Outstanding"
           value={`₹${totalOutstanding.toLocaleString('en-IN')}`}
           icon={<AlertCircle className="w-5 h-5 text-rose-600" />}
-          subtitle="Current total due from shops"
+          subtitle={outstandingSubtitle}
           accentColor="orange"
           onClick={() => onNavigate('shops')}
         />
@@ -142,7 +168,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           title="Active Trips"
           value={activeTripsCount}
           icon={<Truck className="w-5 h-5 text-sky-600" />}
-          subtitle={`${activeTrips.length} vehicles currently on route`}
+          subtitle={activeTripsSubtitle}
           accentColor="blue"
           onClick={() => onNavigate('trips')}
         />
@@ -156,7 +182,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <h2 className="text-base font-bold text-slate-900 tracking-tight">
-              CURRENT TRIPS
+              {isAdmin ? 'CURRENT TRIPS' : 'YOUR ACTIVE TRIPS'}
             </h2>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800">
               {activeTrips.length} Active
@@ -167,7 +193,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             onClick={() => onNavigate('trips')}
             className="text-xs font-semibold text-[#172554] hover:underline flex items-center gap-1 transition-colors"
           >
-            View All Trips <ArrowRight className="w-3.5 h-3.5" />
+            {isAdmin ? 'View All Trips' : 'View All Assigned Trips'} <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -182,6 +208,27 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 onSelectTrip={onSelectTrip}
               />
             ))}
+          </div>
+        ) : !isAdmin ? (
+          <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mx-auto text-slate-400">
+              <Truck className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800">No active trips assigned to you today</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                Your sales and collection metrics will appear here when you are assigned to a trip by dispatch.
+              </p>
+            </div>
+            <div className="pt-1 flex items-center justify-center gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onNavigate('trips')}
+              >
+                Check Trip History
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">

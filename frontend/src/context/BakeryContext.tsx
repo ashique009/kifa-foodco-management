@@ -1046,12 +1046,36 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // 8. Vehicle CRUD
   const addVehicle = async (vehData: Omit<Vehicle, 'id'>) => {
     try {
-      await vehiclesApi.create({
+      const res = await vehiclesApi.create({
         vehicle_number: vehData.plateNumber,
         vehicle_name: vehData.model,
       });
+
+      if (res?.vehicle?.id) {
+        const v = res.vehicle;
+        const newVehicle: Vehicle = {
+          id: v.id,
+          plateNumber: v.vehicle_number,
+          model: v.vehicle_name || 'Delivery Van',
+          capacityKg: 1000,
+          status: mapBackendVehicleStatus(v.status),
+        };
+        setVehicles((prev) => [newVehicle, ...prev.filter((item) => item.id !== newVehicle.id)]);
+      } else {
+        // Scoped fallback: refetch only vehicles if response lacks complete fields
+        const vehiclesRes = await vehiclesApi.getAll().catch(() => ({ vehicles: [] }));
+        setVehicles(
+          (vehiclesRes.vehicles || []).map((v: any) => ({
+            id: v.id,
+            plateNumber: v.vehicle_number,
+            model: v.vehicle_name || 'Delivery Van',
+            capacityKg: 1000,
+            status: mapBackendVehicleStatus(v.status),
+          }))
+        );
+      }
+
       showToast('success', 'Vehicle Added', `${vehData.plateNumber} added to fleet.`);
-      await refreshAllData();
     } catch (err: any) {
       showToast('error', 'Failed to Add Vehicle', err.message);
     }
@@ -1118,8 +1142,8 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const archiveStaff = async (id: string) => {
     try {
       await staffApi.delete(id);
+      setStaff((prev) => prev.filter((s) => s.id !== id));
       showToast('info', 'Staff Removed', 'Staff member has been archived/deactivated.');
-      await refreshAllData();
     } catch (err: any) {
       showToast('error', 'Remove Failed', err.message);
     }
@@ -1128,8 +1152,8 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const deleteStaff = async (id: string) => {
     try {
       await staffApi.delete(id);
+      setStaff((prev) => prev.filter((s) => s.id !== id));
       showToast('info', 'Staff Removed', 'Staff member removed successfully.');
-      await refreshAllData();
     } catch (err: any) {
       showToast('error', 'Remove Failed', err.message);
     }

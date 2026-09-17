@@ -196,10 +196,32 @@ const createPayment = async (req, res) => {
 
     const newBalance = currentBalance - paymentAmount;
 
-    // Create payment with idempotency key
+    // Generate receipt number from document_sequences and receipt_prefix
+    const seqResult = await client.query(
+      `
+      INSERT INTO document_sequences (document_type, current_value)
+      VALUES ('payment', 1)
+      ON CONFLICT (document_type)
+      DO UPDATE SET
+        current_value = document_sequences.current_value + 1
+      RETURNING current_value
+      `
+    );
+
+    const settingsRes = await client.query(
+      `SELECT receipt_prefix FROM business_settings WHERE id = 'default' LIMIT 1`
+    );
+    const receiptPrefix = settingsRes.rows[0]?.receipt_prefix || "REC-";
+
+    const receiptNumber = `${receiptPrefix}${String(
+      seqResult.rows[0].current_value
+    ).padStart(5, "0")}`;
+
+    // Create payment with idempotency key and persistent receipt_number
     const paymentResult = await client.query(
       `
       INSERT INTO payments (
+        receipt_number,
         shop_id,
         sale_id,
         payment_method,
@@ -209,10 +231,11 @@ const createPayment = async (req, res) => {
         notes,
         idempotency_key
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
       `,
       [
+        receiptNumber,
         shop_id,
         sale_id || null,
         payment_method,

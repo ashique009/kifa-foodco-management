@@ -16,6 +16,7 @@ const shopRoutes = require("./routes/shopRoutes");
 const saleRoutes = require("./routes/saleRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const returnRoutes = require("./routes/returnRoutes");
+const settingsRoutes = require("./routes/settingsRoutes");
 
 
 const allowedOrigins = [
@@ -57,6 +58,7 @@ app.use("/api/shops", shopRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/returns", returnRoutes);
+app.use("/api/settings", settingsRoutes);
 
 app.get("/", (req, res) => {
   res.json({

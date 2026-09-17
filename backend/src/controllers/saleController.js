@@ -356,7 +356,13 @@ const createSale = async (req, res) => {
       `
     );
 
-    const invoiceNumber = `INV-${String(
+    // Fetch configured invoice prefix from business_settings
+    const settingsRes = await client.query(
+      `SELECT invoice_prefix FROM business_settings WHERE id = 'default' LIMIT 1`
+    );
+    const invoicePrefix = settingsRes.rows[0]?.invoice_prefix || "INV-";
+
+    const invoiceNumber = `${invoicePrefix}${String(
       sequenceResult.rows[0].current_value
     ).padStart(5, "0")}`;
 

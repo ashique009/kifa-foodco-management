@@ -1,38 +1,106 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useBakery } from '../context/BakeryContext';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
+import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Tabs } from '../components/ui/Tabs';
-import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { Settings, Store, Receipt, Shield, RotateCcw, Check } from 'lucide-react';
+import { Shield, Lock, AlertCircle, Save, CheckCircle2 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
-  const { resetToDemoData, showToast } = useBakery();
+  const { currentUser, businessSettings, updateBusinessProfile, updateInvoiceSettings } = useBakery();
+  const isAdmin = currentUser.userRole === 'admin';
+
   const [activeTab, setActiveTab] = useState('business');
-  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
-  // Business info form
-  const [businessName, setBusinessName] = useState('Kifa Food Co.');
-  const [gstin, setGstin] = useState('32ABCDE1234F1Z5');
-  const [phone, setPhone] = useState('0495-2760000');
-  const [email, setEmail] = useState('orders@kifafoodco.com');
-  const [address, setAddress] = useState('Industrial Estate Road, Malaparamba, Kozhikode, Kerala 673009');
+  // Business info form state
+  const [businessName, setBusinessName] = useState(businessSettings.business_name || '');
+  const [gstin, setGstin] = useState(businessSettings.gstin || '');
+  const [phone, setPhone] = useState(businessSettings.phone || '');
+  const [email, setEmail] = useState(businessSettings.email || '');
+  const [address, setAddress] = useState(businessSettings.address || '');
 
-  // Invoice prefix
-  const [invoicePrefix, setInvoicePrefix] = useState('KIFA-2026-');
-  const [footerNote, setFooterNote] = useState('Thank you for choosing Kifa Food Co.! Goods once sold will only be replaced if reported within 24 hours.');
+  // Invoice & Receipt settings form state
+  const [invoicePrefix, setInvoicePrefix] = useState(businessSettings.invoice_prefix || 'INV-');
+  const [receiptPrefix, setReceiptPrefix] = useState(businessSettings.receipt_prefix || 'REC-');
+  const [invoiceFooterNote, setInvoiceFooterNote] = useState(businessSettings.invoice_footer_note || '');
+  const [receiptFooterNote, setReceiptFooterNote] = useState(businessSettings.receipt_footer_note || '');
 
-  const handleSaveBusiness = (e: React.FormEvent) => {
+  // Sync state when businessSettings updates from backend
+  useEffect(() => {
+    setBusinessName(businessSettings.business_name || '');
+    setGstin(businessSettings.gstin || '');
+    setPhone(businessSettings.phone || '');
+    setEmail(businessSettings.email || '');
+    setAddress(businessSettings.address || '');
+    setInvoicePrefix(businessSettings.invoice_prefix || 'INV-');
+    setReceiptPrefix(businessSettings.receipt_prefix || 'REC-');
+    setInvoiceFooterNote(businessSettings.invoice_footer_note || '');
+    setReceiptFooterNote(businessSettings.receipt_footer_note || '');
+  }, [businessSettings]);
+
+  const [isSavingBusiness, setIsSavingBusiness] = useState(false);
+  const [isSavingInvoice, setIsSavingInvoice] = useState(false);
+
+  const handleSaveBusiness = async (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('success', 'Settings Saved', 'Business information updated successfully.');
+    if (isSavingBusiness) return;
+    setIsSavingBusiness(true);
+    try {
+      await updateBusinessProfile({
+        business_name: businessName,
+        gstin,
+        phone,
+        email,
+        address,
+      });
+    } finally {
+      setIsSavingBusiness(false);
+    }
   };
+
+  const handleSaveInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSavingInvoice) return;
+    setIsSavingInvoice(true);
+    try {
+      await updateInvoiceSettings({
+        invoice_prefix: invoicePrefix,
+        receipt_prefix: receiptPrefix,
+        invoice_footer_note: invoiceFooterNote,
+        receipt_footer_note: receiptFooterNote,
+      });
+    } finally {
+      setIsSavingInvoice(false);
+    }
+  };
+
+  // If user is not an admin, display a clean security notice
+  if (!isAdmin) {
+    return (
+      <div className="max-w-2xl mx-auto py-12 px-4 text-center space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
+          <Lock className="w-7 h-7" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">Admin Access Required</h2>
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
+            Business settings, invoice numbering, tax details and roles can only be configured by business administrators.
+          </p>
+        </div>
+        <div className="pt-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 text-xs font-medium">
+            <Shield className="w-3.5 h-3.5" />
+            <span>Logged in as {currentUser.name} ({currentUser.role})</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const tabs = [
     { id: 'business', label: 'Business Profile' },
-    { id: 'invoice', label: 'Invoice Settings' },
+    { id: 'invoice', label: 'Invoice & Receipts' },
     { id: 'roles', label: 'Roles & Permissions' },
-    { id: 'demo', label: 'Data Management' },
   ];
 
   return (
@@ -41,7 +109,7 @@ export const SettingsPage: React.FC = () => {
       <div>
         <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Settings</h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-          Bakery profile, tax invoice numbers, staff permission roles, and mock data options
+          Enterprise business profile, document prefixes, terms, and system access controls
         </p>
       </div>
 
@@ -51,8 +119,8 @@ export const SettingsPage: React.FC = () => {
       {activeTab === 'business' && (
         <Card className="p-5">
           <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
-            <CardTitle>Business Information</CardTitle>
-            <p className="text-xs text-slate-500">Legal entity info printed on invoices and delivery bills</p>
+            <CardTitle>Business Profile</CardTitle>
+            <p className="text-xs text-slate-500">Legal entity information printed on tax invoices and receipts</p>
           </CardHeader>
 
           <form onSubmit={handleSaveBusiness} className="space-y-4 text-xs">
@@ -61,6 +129,7 @@ export const SettingsPage: React.FC = () => {
                 label="Registered Business Name"
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
+                placeholder="e.g. Kifa Food Co."
                 required
               />
             </div>
@@ -71,6 +140,7 @@ export const SettingsPage: React.FC = () => {
                   label="GSTIN Tax Number"
                   value={gstin}
                   onChange={(e) => setGstin(e.target.value)}
+                  placeholder="e.g. 32ABCDE1234F1Z5"
                 />
               </div>
               <div>
@@ -78,6 +148,7 @@ export const SettingsPage: React.FC = () => {
                   label="Business Contact Phone"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
+                  placeholder="e.g. 0495-2760000"
                   required
                 />
               </div>
@@ -89,6 +160,7 @@ export const SettingsPage: React.FC = () => {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                placeholder="e.g. orders@kifafoodco.com"
               />
             </div>
 
@@ -97,141 +169,159 @@ export const SettingsPage: React.FC = () => {
                 label="Godown & Distribution Center Address"
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
+                placeholder="Full operational facility address"
               />
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex justify-end">
-              <Button type="submit" variant="primary" size="md">
-                Save Business Profile
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                disabled={isSavingBusiness}
+                leftIcon={<Save className="w-4 h-4" />}
+              >
+                {isSavingBusiness ? 'Saving...' : 'Save Business Profile'}
               </Button>
             </div>
           </form>
         </Card>
       )}
 
-      {/* 2. Invoice Settings */}
+      {/* 2. Invoice & Receipt Settings */}
       {activeTab === 'invoice' && (
         <Card className="p-5">
           <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
             <CardTitle>Invoice &amp; Receipt Configuration</CardTitle>
-            <p className="text-xs text-slate-500">Number formatting and terms printed for retail shops</p>
+            <p className="text-xs text-slate-500">Number prefix formats and standard customer terms printed on delivery bills</p>
           </CardHeader>
 
-          <div className="space-y-4 text-xs">
-            <div className="grid grid-cols-2 gap-4">
+          <form onSubmit={handleSaveInvoice} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Input
                   label="Invoice Number Prefix"
                   value={invoicePrefix}
                   onChange={(e) => setInvoicePrefix(e.target.value)}
+                  placeholder="e.g. INV- or KIFA-2026-"
+                  required
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Prefix applied to future generated invoices (e.g. {invoicePrefix || 'INV-'}00174).
+                </p>
               </div>
               <div>
                 <Input
-                  label="Receipt Prefix"
-                  value="REC-2026-"
-                  readOnly
-                  className="bg-slate-50"
+                  label="Receipt Number Prefix"
+                  value={receiptPrefix}
+                  onChange={(e) => setReceiptPrefix(e.target.value)}
+                  placeholder="e.g. REC- or REC-2026-"
+                  required
                 />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Prefix applied to future collection receipts (e.g. {receiptPrefix || 'REC-'}00094).
+                </p>
               </div>
             </div>
 
             <div>
-              <Input
-                label="Default Invoice Footer Note"
-                value={footerNote}
-                onChange={(e) => setFooterNote(e.target.value)}
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Default Invoice Footer Note
+              </label>
+              <textarea
+                value={invoiceFooterNote}
+                onChange={(e) => setInvoiceFooterNote(e.target.value)}
+                rows={3}
+                className="w-full rounded-lg border border-slate-200 p-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#172554] focus:border-transparent"
+                placeholder="Printed at the bottom of customer sales invoices..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Default Receipt Footer Note
+              </label>
+              <textarea
+                value={receiptFooterNote}
+                onChange={(e) => setReceiptFooterNote(e.target.value)}
+                rows={2}
+                className="w-full rounded-lg border border-slate-200 p-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#172554] focus:border-transparent"
+                placeholder="Printed on payment collection receipts..."
               />
             </div>
 
             <div className="pt-3 border-t border-slate-100 flex justify-end">
               <Button
+                type="submit"
                 variant="primary"
                 size="md"
-                onClick={() => showToast('success', 'Invoice Settings Saved')}
+                disabled={isSavingInvoice}
+                leftIcon={<Save className="w-4 h-4" />}
               >
-                Save Invoice Preferences
+                {isSavingInvoice ? 'Saving...' : 'Save Invoice Preferences'}
               </Button>
             </div>
-          </div>
+          </form>
         </Card>
       )}
 
-      {/* 3. Roles & Permissions */}
+      {/* 3. Roles & Permissions (Truthful, non-fake architecture display) */}
       {activeTab === 'roles' && (
         <Card className="p-5">
           <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
-            <CardTitle>Roles &amp; Access Controls</CardTitle>
-            <p className="text-xs text-slate-500">Permissions matrix for delivery crew vs office staff</p>
+            <CardTitle>System Access Control Matrix</CardTitle>
+            <p className="text-xs text-slate-500">
+              Role permissions strictly enforced by the backend database and API middleware
+            </p>
           </CardHeader>
 
           <div className="space-y-3 text-xs">
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <p className="font-bold text-slate-900">Admin / Owner</p>
-                <p className="text-slate-500 mt-0.5">Full access to reports, stock adjustments, pricing and staff</p>
-              </div>
-              <span className="font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                Full Access
-              </span>
-            </div>
-
-            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div>
-                <p className="font-bold text-slate-900">Driver &amp; Sales Staff (Delivery Crew)</p>
-                <p className="text-slate-500 mt-0.5">
-                  Mobile access: Trip checklist, Record sale, Collect payment, Record return
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">Business Owner / Admin</span>
+                  <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[10px] border border-emerald-200">
+                    Full System Authority
+                  </span>
+                </div>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Unrestricted access to company-wide financial metrics, trip dispatching, product catalogue & pricing, staff credentials, and enterprise settings.
                 </p>
+                <div className="pt-2 flex flex-wrap gap-1.5">
+                  {['Company-Wide Reports', 'Fleet & Trips', 'Stock Management', 'Pricing & SKUs', 'Staff Accounts', 'Business Settings'].map((p) => (
+                    <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 font-medium">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      {p}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <span className="font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                Crew Field View
-              </span>
+            </div>
+
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">Driver &amp; Sales Staff (Delivery Crew)</span>
+                  <span className="font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-[10px] border border-blue-200">
+                    Crew Field Scoped
+                  </span>
+                </div>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Scoped strictly to their assigned delivery trips. Can record sales and collect payments only for retail shops on their route. Sensitive master data and company totals are hidden.
+                </p>
+                <div className="pt-2 flex flex-wrap gap-1.5">
+                  {['Assigned Route View', 'Record Sales on Trip', 'Collect Shop Payments', 'Record Shop Returns', 'Vehicle Stock Counts'].map((p) => (
+                    <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 font-medium">
+                      <CheckCircle2 className="w-3 h-3 text-blue-600" />
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </Card>
       )}
-
-      {/* 4. Data Management / Reset Demo */}
-      {activeTab === 'demo' && (
-        <Card className="p-5">
-          <CardHeader className="p-0 pb-4 border-b border-slate-100 mb-4">
-            <CardTitle>Demo State &amp; Reset</CardTitle>
-            <p className="text-xs text-slate-500">Manage prototype data stored in your local browser cache</p>
-          </CardHeader>
-
-          <div className="space-y-4 text-xs">
-            <p className="text-slate-600 leading-relaxed">
-              All your edits (new trips, sales recorded, payments collected, stock loaded) are automatically preserved in your browser's local storage.
-              If you wish to restore the clean initial bakery mock dataset, click below.
-            </p>
-
-            <div className="pt-2">
-              <Button
-                variant="danger"
-                size="md"
-                leftIcon={<RotateCcw className="w-4 h-4" />}
-                onClick={() => setIsResetConfirmOpen(true)}
-              >
-                Reset to Sample Bakery Data
-              </Button>
-            </div>
-          </div>
-        </Card>
-      )}
-
-      {/* Confirm Reset Dialog */}
-      <ConfirmDialog
-        isOpen={isResetConfirmOpen}
-        onClose={() => setIsResetConfirmOpen(false)}
-        onConfirm={() => {
-          resetToDemoData();
-          setIsResetConfirmOpen(false);
-        }}
-        title="Reset Demo Data?"
-        message="This will reset all products, trips, shops, sales and ledger records back to default sample data."
-        confirmText="Reset Now"
-        variant="danger"
-      />
     </div>
   );
 };

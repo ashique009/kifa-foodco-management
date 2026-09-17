@@ -35,7 +35,7 @@ const pageTitles: Record<NavigationPage, { title: string; subtitle: string }> = 
   suppliers: { title: 'Suppliers', subtitle: 'Raw materials and packaging vendors' },
   purchases: { title: 'Purchases', subtitle: 'Raw material procurement and intake' },
   expenses: { title: 'Expenses', subtitle: 'Daily fuel, repairs and crew allowances' },
-  settings: { title: 'Settings', subtitle: 'Business configuration and sample data' },
+  settings: { title: 'Settings', subtitle: 'Business profile, invoice configuration, and system access' },
 };
 
 export const Header: React.FC<HeaderProps> = ({

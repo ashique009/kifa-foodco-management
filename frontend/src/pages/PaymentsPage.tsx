@@ -9,12 +9,13 @@ import { Modal } from '../components/ui/Modal';
 import { Plus, Filter, Calendar, SlidersHorizontal, Check } from 'lucide-react';
 
 export const PaymentsPage: React.FC = () => {
-  const { payments, paymentBreakdown, todayCollectionTotal } = useBakery();
+  const { payments, paymentBreakdown, todayCollectionTotal, businessSettings } = useBakery();
   const [search, setSearch] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('today');
   const [isRecordPaymentOpen, setIsRecordPaymentOpen] = useState(false);
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
 
   const todayStr = '2026-09-14';
 
@@ -207,11 +208,18 @@ export const PaymentsPage: React.FC = () => {
                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
                 <span>{p.date === todayStr ? 'Today' : p.date}</span>
               </span>
-              {p.reference ? (
-                <span className="font-mono text-[11px] text-slate-400">Ref: {p.reference}</span>
-              ) : (
-                <span className="text-slate-400 text-[11px]">Received by {p.receivedBy || 'Staff'}</span>
-              )}
+              <div className="flex items-center gap-3">
+                {p.reference && (
+                  <span className="font-mono text-[11px] text-slate-400">Ref: {p.reference}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSelectedPayment(p)}
+                  className="font-semibold text-xs text-[#172554] hover:underline"
+                >
+                  View Receipt
+                </button>
+              </div>
             </div>
           </Card>
         ))}
@@ -236,6 +244,7 @@ export const PaymentsPage: React.FC = () => {
                 <th className="py-3 px-4">Reference</th>
                 <th className="py-3 px-3">Received By</th>
                 <th className="py-3 px-4 text-right">Amount</th>
+                <th className="py-3 px-4 text-center">Receipt</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -255,6 +264,14 @@ export const PaymentsPage: React.FC = () => {
                   <td className="py-3 px-3 text-slate-600">{p.receivedBy || 'Staff'}</td>
                   <td className="py-3 px-4 text-right font-bold text-emerald-600 text-sm">
                     +₹{p.amount.toLocaleString('en-IN')}
+                  </td>
+                  <td className="py-3 px-4 text-center">
+                    <button
+                      onClick={() => setSelectedPayment(p)}
+                      className="text-xs font-semibold text-[#172554] hover:underline hover:text-blue-700"
+                    >
+                      View
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -358,6 +375,92 @@ export const PaymentsPage: React.FC = () => {
         isOpen={isRecordPaymentOpen}
         onClose={() => setIsRecordPaymentOpen(false)}
       />
+
+      {/* Receipt Detail Modal */}
+      {selectedPayment && (
+        <Modal
+          isOpen={!!selectedPayment}
+          onClose={() => setSelectedPayment(null)}
+          title={`Receipt ${selectedPayment.receiptNumber}`}
+          description={`Payment received from ${selectedPayment.shopName} on ${selectedPayment.date}`}
+          maxWidth="md"
+          footer={
+            <div className="flex items-center justify-between w-full">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => window.print()}
+              >
+                Print Receipt
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => setSelectedPayment(null)}>
+                Close
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4 text-xs">
+            {/* Business Header from Settings */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-slate-700">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-200 pb-2">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                    {businessSettings.business_name}
+                  </h3>
+                  {businessSettings.address && (
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">
+                      {businessSettings.address}
+                    </p>
+                  )}
+                </div>
+                <div className="text-left sm:text-right text-[11px] text-slate-600 shrink-0">
+                  {businessSettings.gstin && (
+                    <p><span className="font-semibold text-slate-700">GSTIN:</span> {businessSettings.gstin}</p>
+                  )}
+                  {businessSettings.phone && (
+                    <p><span className="font-semibold text-slate-700">Phone:</span> {businessSettings.phone}</p>
+                  )}
+                </div>
+              </div>
+              <div className="pt-1 flex flex-wrap items-center justify-between text-[11px] text-slate-500">
+                <span><strong>Receipt:</strong> {selectedPayment.receiptNumber}</span>
+                <span><strong>Date:</strong> {selectedPayment.date}</span>
+              </div>
+            </div>
+
+            {/* Payment Details */}
+            <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+              <div className="p-3 flex items-center justify-between">
+                <span className="text-slate-500">Received From</span>
+                <span className="font-bold text-slate-900">{selectedPayment.shopName}</span>
+              </div>
+              <div className="p-3 flex items-center justify-between">
+                <span className="text-slate-500">Payment Instrument</span>
+                <PaymentMethodBadge method={selectedPayment.method} />
+              </div>
+              {selectedPayment.reference && (
+                <div className="p-3 flex items-center justify-between">
+                  <span className="text-slate-500">Transaction Ref</span>
+                  <span className="font-mono text-slate-800">{selectedPayment.reference}</span>
+                </div>
+              )}
+              <div className="p-3.5 bg-emerald-50/50 flex items-center justify-between">
+                <span className="font-bold text-slate-900 text-sm">Amount Received</span>
+                <span className="text-lg font-black text-emerald-600">
+                  ₹{selectedPayment.amount.toLocaleString('en-IN')}
+                </span>
+              </div>
+            </div>
+
+            {/* Configured Receipt Footer Note from Settings */}
+            {businessSettings.receipt_footer_note && (
+              <div className="pt-2 text-center text-slate-500 text-[11px] italic leading-relaxed">
+                {businessSettings.receipt_footer_note}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };

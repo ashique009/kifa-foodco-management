@@ -13,7 +13,7 @@ interface SalesPageProps {
 }
 
 export const SalesPage: React.FC<SalesPageProps> = ({ onOpenRecordSale }) => {
-  const { sales } = useBakery();
+  const { sales, businessSettings } = useBakery();
   const [search, setSearch] = useState('');
   const [filterMethod, setFilterMethod] = useState<string>('all');
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -221,19 +221,57 @@ export const SalesPage: React.FC<SalesPageProps> = ({ onOpenRecordSale }) => {
           description={`Issued to ${selectedSale.shopName} on ${selectedSale.date} at ${selectedSale.time}`}
           maxWidth="lg"
           footer={
-            <Button variant="secondary" size="sm" onClick={() => setSelectedSale(null)}>
-              Close
-            </Button>
+            <div className="flex items-center justify-between w-full">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => window.print()}
+              >
+                Print Invoice
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => setSelectedSale(null)}>
+                Close
+              </Button>
+            </div>
           }
         >
           <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-50 rounded-lg flex items-center justify-between">
+            {/* Business Header from Settings */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-slate-700">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-200 pb-2">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 tracking-tight">
+                    {businessSettings.business_name}
+                  </h3>
+                  {businessSettings.address && (
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-tight">
+                      {businessSettings.address}
+                    </p>
+                  )}
+                </div>
+                <div className="text-left sm:text-right text-[11px] text-slate-600 shrink-0">
+                  {businessSettings.gstin && (
+                    <p><span className="font-semibold text-slate-700">GSTIN:</span> {businessSettings.gstin}</p>
+                  )}
+                  {businessSettings.phone && (
+                    <p><span className="font-semibold text-slate-700">Phone:</span> {businessSettings.phone}</p>
+                  )}
+                </div>
+              </div>
+              <div className="pt-1 flex flex-wrap items-center justify-between text-[11px] text-slate-500">
+                <span><strong>Invoice:</strong> {selectedSale.invoiceNumber}</span>
+                <span><strong>Date:</strong> {selectedSale.date} {selectedSale.time}</span>
+              </div>
+            </div>
+
+            {/* Customer & Payment Mode */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
               <div>
-                <span className="text-slate-500 block">Retail Customer</span>
+                <span className="text-slate-500 block text-[11px]">Retail Customer</span>
                 <span className="font-bold text-slate-900 text-sm">{selectedSale.shopName}</span>
               </div>
               <div className="text-right">
-                <span className="text-slate-500 block">Payment Mode</span>
+                <span className="text-slate-500 block text-[11px]">Payment Mode</span>
                 <PaymentMethodBadge method={selectedSale.paymentMethod} />
               </div>
             </div>
@@ -297,6 +335,13 @@ export const SalesPage: React.FC<SalesPageProps> = ({ onOpenRecordSale }) => {
                 </div>
               )}
             </div>
+
+            {/* Configured Invoice Footer Note from Settings */}
+            {businessSettings.invoice_footer_note && (
+              <div className="pt-3 border-t border-dashed border-slate-300 text-center text-slate-500 text-[11px] italic leading-relaxed">
+                {businessSettings.invoice_footer_note}
+              </div>
+            )}
           </div>
         </Modal>
       )}

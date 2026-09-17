@@ -39,6 +39,8 @@ import {
   salesApi,
   paymentsApi,
   returnsApi,
+  settingsApi,
+  BusinessSettings,
 } from '../api';
 import {
   getToken,
@@ -151,6 +153,22 @@ interface BakeryContextType {
   isSupplierInUse: (id: string) => boolean;
   getShopLedger: (shopId: string) => ShopLedgerEntry[];
   resetToDemoData: () => void;
+
+  // Settings
+  businessSettings: BusinessSettings;
+  updateBusinessProfile: (data: {
+    business_name: string;
+    gstin?: string;
+    phone: string;
+    email?: string;
+    address?: string;
+  }) => Promise<void>;
+  updateInvoiceSettings: (data: {
+    invoice_prefix: string;
+    receipt_prefix: string;
+    invoice_footer_note?: string;
+    receipt_footer_note?: string;
+  }) => Promise<void>;
 }
 
 const BakeryContext = createContext<BakeryContextType | undefined>(undefined);
@@ -208,6 +226,19 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const globalLoadingSubMessage = actionLoading.isLoading
     ? undefined
     : 'Syncing system records and inventory...';
+
+  // Settings state
+  const [businessSettings, setBusinessSettings] = useState<BusinessSettings>({
+    business_name: 'Kifa Food Co.',
+    gstin: '32ABCDE1234F1Z5',
+    phone: '0495-2760000',
+    email: 'orders@kifafoodco.com',
+    address: 'Industrial Estate Road, Malaparamba, Kozhikode, Kerala 673009',
+    invoice_prefix: 'INV-',
+    receipt_prefix: 'REC-',
+    invoice_footer_note: 'Thank you for choosing Kifa Food Co.! Goods once sold will only be replaced if reported within 24 hours.',
+    receipt_footer_note: 'Thank you for your payment. Keep this receipt for your records.',
+  });
 
   // Entities state
   const [products, setProducts] = useState<Product[]>([]);
@@ -524,12 +555,17 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       setTrips(detailedTrips);
 
-      // 6. Fetch Sales, Payments & Returns
-      const [salesRes, paymentsRes, returnsRes] = await Promise.all([
+      // 6. Fetch Sales, Payments, Returns & Settings
+      const [salesRes, paymentsRes, returnsRes, settingsRes] = await Promise.all([
         salesApi.getAll().catch(() => ({ sales: [] })),
         paymentsApi.getAll().catch(() => ({ payments: [] })),
         returnsApi.getAll().catch(() => ({ returns: [] })),
+        settingsApi.get().catch(() => ({ settings: null })),
       ]);
+
+      if (settingsRes?.settings) {
+        setBusinessSettings(settingsRes.settings);
+      }
 
       const mappedSales: Sale[] = (salesRes.sales || []).map((s: any) => ({
         id: s.id,
@@ -562,9 +598,11 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         else if (p.payment_method === 'card') method = 'Card';
         else if (p.payment_method === 'bank_transfer') method = 'Bank Transfer';
 
+        const recNum = p.receipt_number || `REC-${p.id.slice(0, 8).toUpperCase()}`;
+
         return {
           id: p.id,
-          receiptNumber: `REC-${p.id.slice(0, 8).toUpperCase()}`,
+          receiptNumber: recNum,
           shopId: p.shop_id,
           shopName: p.shop_name || 'Shop',
           saleId: p.sale_id,
@@ -1476,6 +1514,43 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     });
   };
 
+  const updateBusinessProfile = async (data: {
+    business_name: string;
+    gstin?: string;
+    phone: string;
+    email?: string;
+    address?: string;
+  }) => {
+    await withGlobalLoading(async () => {
+      try {
+        const res = await settingsApi.updateBusiness(data);
+        setBusinessSettings(res.settings);
+        showToast('success', 'Business Profile Saved', 'Company information updated successfully.');
+      } catch (err: any) {
+        showToast('error', 'Update Failed', err.message || 'Unable to update business profile.');
+        throw err;
+      }
+    }, 'Saving business profile...');
+  };
+
+  const updateInvoiceSettings = async (data: {
+    invoice_prefix: string;
+    receipt_prefix: string;
+    invoice_footer_note?: string;
+    receipt_footer_note?: string;
+  }) => {
+    await withGlobalLoading(async () => {
+      try {
+        const res = await settingsApi.updateInvoice(data);
+        setBusinessSettings(res.settings);
+        showToast('success', 'Invoice Settings Saved', 'Number prefixes and terms updated successfully.');
+      } catch (err: any) {
+        showToast('error', 'Update Failed', err.message || 'Unable to update invoice settings.');
+        throw err;
+      }
+    }, 'Saving invoice preferences...');
+  };
+
   const resetToDemoData = () => {
     refreshAllData();
     showToast('info', 'Data Refreshed', 'Records reloaded from PostgreSQL backend.');
@@ -1545,6 +1620,9 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         isSupplierInUse,
         getShopLedger,
         resetToDemoData,
+        businessSettings,
+        updateBusinessProfile,
+        updateInvoiceSettings,
       }}
     >
       {children}

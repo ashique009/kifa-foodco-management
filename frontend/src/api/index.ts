@@ -288,3 +288,34 @@ export const returnsApi = {
         : undefined,
     }),
 };
+
+export interface BusinessSettings {
+  business_name: string;
+  gstin?: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  invoice_prefix: string;
+  receipt_prefix: string;
+  invoice_footer_note?: string;
+  receipt_footer_note?: string;
+  updated_at?: string;
+}
+
+export const settingsApi = {
+  get: () => api.get<{ settings: BusinessSettings }>('/api/settings'),
+  updateBusiness: (data: {
+    business_name: string;
+    gstin?: string;
+    phone: string;
+    email?: string;
+    address?: string;
+  }) => api.put<{ message: string; settings: BusinessSettings }>('/api/settings/business', data),
+  updateInvoice: (data: {
+    invoice_prefix: string;
+    receipt_prefix: string;
+    invoice_footer_note?: string;
+    receipt_footer_note?: string;
+  }) => api.put<{ message: string; settings: BusinessSettings }>('/api/settings/invoice', data),
+};
+

@@ -1086,29 +1086,4 @@ export const initialPurchases: Purchase[] = [
   },
 ];
 
-export const initialAlerts: BusinessAlert[] = [
-  {
-    id: 'alt-1',
-    type: 'low_stock',
-    title: '4 products are low in stock',
-    description: 'Plum Cake, Pineapple Pastry, Veg Puff and Egg Puff are below reorder threshold.',
-    severity: 'warning',
-    linkTo: '/stock',
-  },
-  {
-    id: 'alt-2',
-    type: 'outstanding',
-    title: '3 shops have outstanding payments',
-    description: 'Royal Mart (₹3,450), New Star Bakery (₹2,100), and Fresh Mart (₹1,200) need collection.',
-    severity: 'danger',
-    linkTo: '/shops',
-  },
-  {
-    id: 'alt-3',
-    type: 'expiring',
-    title: '2 batches are expiring soon',
-    description: 'Pineapple Pastry and Veg Puff batches expire tomorrow (15 Sep).',
-    severity: 'warning',
-    linkTo: '/stock',
-  },
-];
+export const initialAlerts: BusinessAlert[] = [];

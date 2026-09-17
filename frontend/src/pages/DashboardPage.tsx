@@ -10,10 +10,7 @@ import {
   Truck,
   Plus,
   ArrowRight,
-  Store,
-  Layers,
-  Clock,
-  AlertTriangle,
+  Bell,
 } from 'lucide-react';
 import { NavigationPage } from '../components/layout/Sidebar';
 
@@ -39,20 +36,12 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
     trips,
     sales,
     payments,
-    alerts,
   } = useBakery();
 
   // Currently active trips (In Progress or Loaded on route)
   const activeTrips = trips.filter(
     (t) => t.status === 'In Progress' || t.status === 'Loaded'
   );
-
-  // Operational alerts only: Low stock, Near-expiry, Outstanding payments
-  const operationalAlerts = alerts
-    .filter((a) =>
-      ['low_stock', 'expiring', 'outstanding'].includes(a.type)
-    )
-    .slice(0, 3);
 
   // Dynamic greeting based on the user's local browser time
   const hour = new Date().getHours();
@@ -254,69 +243,58 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       </div>
 
       {/* 
-        COMPACT BUSINESS ALERTS SECTION:
-        Operational alerts only: low stock, expiring batches, and overdue receivables
+        OPERATIONAL ALERTS SECTION (Coming Soon state):
+        Clean, production-ready placeholder without any mock/fake business data
       */}
-      {operationalAlerts.length > 0 && (
-        <div className="space-y-3 pt-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Operational Alerts
-              </h2>
-            </div>
-            <span className="text-[11px] text-slate-400">Requires attention</span>
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-slate-400" />
+            <h2 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              Operational Alerts
+            </h2>
           </div>
+          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
+            Coming Soon
+          </span>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {operationalAlerts.map((alert) => {
-              const isDanger = alert.severity === 'danger';
-              const isStock = alert.type === 'low_stock';
+        <div className="bg-white rounded-xl border border-slate-200/90 shadow-2xs p-5 sm:p-6 transition-all">
+          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-5 text-center sm:text-left">
+            <div className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-center shrink-0 text-slate-400">
+              <Bell className="w-5 h-5 stroke-[1.75]" />
+            </div>
 
-              return (
-                <div
-                  key={alert.id}
-                  onClick={() => {
-                    if (alert.linkTo) {
-                      const target = alert.linkTo.replace('/', '') as NavigationPage;
-                      onNavigate(target);
-                    }
-                  }}
-                  className="bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs hover:border-slate-300 hover:shadow-xs cursor-pointer transition-all flex items-start gap-3 group"
-                >
-                  <div className="mt-0.5 shrink-0">
-                    {isDanger ? (
-                      <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
-                        <Store className="w-4 h-4" />
-                      </div>
-                    ) : isStock ? (
-                      <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
-                        <Layers className="w-4 h-4" />
-                      </div>
-                    ) : (
-                      <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
-                        <Clock className="w-4 h-4" />
-                      </div>
-                    )}
-                  </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-3 justify-center sm:justify-start">
+                <h3 className="text-sm font-bold text-slate-900">Operational Alerts</h3>
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/60 w-fit mx-auto sm:mx-0">
+                  Coming Soon
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-2xl">
+                Real-time stock, payment, expiry and operational alerts will be available in a future update.
+              </p>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs font-bold text-slate-900 group-hover:text-primary transition-colors">
-                      {alert.title}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-0.5 leading-snug line-clamp-2">
-                      {alert.description}
-                    </p>
-                  </div>
-
-                  <ArrowRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-600 shrink-0 self-center transition-colors" />
+              {/* Subtle abstract skeleton placeholder cards previewing future layout */}
+              <div className="mt-4 pt-3.5 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2.5 opacity-40 select-none">
+                <div className="h-8 rounded-lg bg-slate-100 border border-slate-200/50 flex items-center px-3 gap-2">
+                  <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                  <div className="h-2 bg-slate-200 rounded w-20"></div>
                 </div>
-              );
-            })}
+                <div className="h-8 rounded-lg bg-slate-100 border border-slate-200/50 flex items-center px-3 gap-2">
+                  <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                  <div className="h-2 bg-slate-200 rounded w-24"></div>
+                </div>
+                <div className="h-8 rounded-lg bg-slate-100 border border-slate-200/50 flex items-center px-3 gap-2">
+                  <div className="w-2 h-2 rounded-full bg-slate-300"></div>
+                  <div className="h-2 bg-slate-200 rounded w-16"></div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

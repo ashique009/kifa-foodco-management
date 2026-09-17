@@ -50,7 +50,6 @@ import {
   setStoredUser,
   AuthUser,
 } from '../api/client';
-import { initialAlerts } from '../data/mockData';
 
 export interface ToastNotification {
   id: string;
@@ -252,7 +251,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [alerts, setAlerts] = useState<BusinessAlert[]>(initialAlerts);
+  const [alerts, setAlerts] = useState<BusinessAlert[]>([]);
   const [toasts, setToasts] = useState<ToastNotification[]>([]);
 
   // Toast handler
@@ -631,40 +630,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       setReturns(mappedReturns);
 
-      // Check operational alerts dynamically from real stock and shops
-      const newAlerts: BusinessAlert[] = [];
-      const lowStockProducts = mappedProducts.filter(
-        (p) => p.godownStock <= p.reorderLevel && p.isActive
-      );
-      if (lowStockProducts.length > 0) {
-        newAlerts.push({
-          id: 'alt-low-stock',
-          type: 'low_stock',
-          title: `${lowStockProducts.length} products are low in stock`,
-          description: `${lowStockProducts.map((p) => p.name).slice(0, 3).join(', ')} need replenishment.`,
-          severity: 'warning',
-          linkTo: '/stock',
-        });
-      }
-
-      const overdueShops = mappedShops.filter((s) => s.outstanding > 0);
-      if (overdueShops.length > 0) {
-        const totalOverdue = overdueShops.reduce((sum, s) => sum + s.outstanding, 0);
-        newAlerts.push({
-          id: 'alt-outstanding',
-          type: 'outstanding',
-          title: `${overdueShops.length} shops have outstanding payments`,
-          description: `Total ₹${totalOverdue.toLocaleString('en-IN')} overdue across shops.`,
-          severity: 'danger',
-          linkTo: '/shops',
-        });
-      }
-
-      if (newAlerts.length === 0) {
-        setAlerts(initialAlerts);
-      } else {
-        setAlerts(newAlerts);
-      }
+      setAlerts([]);
     } catch (err: any) {
       console.error('Error loading backend data:', err);
       showToast('error', 'Data Sync Warning', err.message || 'Unable to sync some records.');

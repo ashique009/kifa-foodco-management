@@ -5,10 +5,6 @@ import {
   Search,
   User as UserIcon,
   CheckCircle2,
-  AlertTriangle,
-  Info,
-  Layers,
-  Store,
 } from 'lucide-react';
 import logoImg from '../../assets/logo.jpg';
 import { useBakery } from '../../context/BakeryContext';
@@ -44,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigate,
   onOpenSearch,
 }) => {
-  const { alerts, currentUser, logout } = useBakery();
+  const { currentUser, logout } = useBakery();
   const [isAlertsOpen, setIsAlertsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const alertsRef = useRef<HTMLDivElement>(null);
@@ -128,51 +124,33 @@ export const Header: React.FC<HeaderProps> = ({
             aria-label="Notifications"
           >
             <Bell className="w-4.5 h-4.5" />
-            {alerts.length > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#F59E0B] ring-2 ring-white" />
-            )}
           </button>
 
           {isAlertsOpen && (
             <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-xl shadow-dropdown border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
+              <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-900 uppercase tracking-wide">
-                  Business Alerts ({alerts.length})
+                  Notifications
                 </span>
-                <span className="text-[11px] text-slate-400">Live Status</span>
+                <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                  Coming Soon
+                </span>
               </div>
-              <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
-                {alerts.map((alert) => (
-                  <div
-                    key={alert.id}
-                    onClick={() => {
-                      if (alert.linkTo) {
-                        const target = alert.linkTo.replace('/', '') as NavigationPage;
-                        onNavigate(target);
-                      }
-                      setIsAlertsOpen(false);
-                    }}
-                    className="p-3.5 hover:bg-slate-50 cursor-pointer transition-colors flex items-start gap-3"
-                  >
-                    <div className="mt-0.5 shrink-0">
-                      {alert.severity === 'danger' ? (
-                        <div className="p-1 rounded-md bg-rose-50 text-rose-600">
-                          <Store className="w-4 h-4" />
-                        </div>
-                      ) : (
-                        <div className="p-1 rounded-md bg-amber-50 text-amber-600">
-                          <Layers className="w-4 h-4" />
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-900">{alert.title}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                        {alert.description}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+
+              <div className="p-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto mb-3 text-slate-400">
+                  <Bell className="w-6 h-6 stroke-[1.5]" />
+                </div>
+                <h4 className="text-sm font-bold text-slate-800">Coming Soon</h4>
+                <p className="text-xs text-slate-500 mt-1.5 leading-relaxed max-w-xs mx-auto">
+                  Real-time business alerts and notifications will appear here in a future update.
+                </p>
+
+                {/* Subtle soft placeholder preview */}
+                <div className="mt-4 pt-4 border-t border-slate-100/80 space-y-2 select-none opacity-40">
+                  <div className="h-2.5 bg-slate-200 rounded-full w-3/4 mx-auto animate-pulse"></div>
+                  <div className="h-2 bg-slate-100 rounded-full w-1/2 mx-auto"></div>
+                </div>
               </div>
             </div>
           )}

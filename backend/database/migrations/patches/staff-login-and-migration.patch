@@ -1,0 +1,243 @@
+diff --git a/backend/src/controllers/staffController.js b/backend/src/controllers/staffController.js
+index a995050..86d9228 100644
+--- a/backend/src/controllers/staffController.js
++++ b/backend/src/controllers/staffController.js
+@@ -1,3 +1,4 @@
++const bcrypt = require("bcrypt");
+ const pool = require("../config/database");
+ 
+ // CREATE STAFF
+@@ -9,6 +10,9 @@ const createStaff = async (req, res) => {
+       phone,
+       role = "sales_staff",
+       is_available = true,
++      username,
++      password,
++      confirmPassword,
+     } = req.body;
+ 
+     if (!name) {
+@@ -17,8 +21,41 @@ const createStaff = async (req, res) => {
+       });
+     }
+ 
++    if (!username || !username.trim()) {
++      return res.status(400).json({
++        message: "Username is required",
++      });
++    }
++
++    if (!password || password.length < 6) {
++      return res.status(400).json({
++        message: "Password is required and must be at least 6 characters",
++      });
++    }
++
++    if (confirmPassword !== undefined && password !== confirmPassword) {
++      return res.status(400).json({
++        message: "Password and confirm password do not match",
++      });
++    }
++
++    const normalizedUsername = username.trim().toLowerCase();
++
+     await client.query("BEGIN");
+ 
++    // Reject duplicate usernames early with a clear message
++    const existingUser = await client.query(
++      `SELECT id FROM users WHERE username = $1`,
++      [normalizedUsername]
++    );
++
++    if (existingUser.rows.length > 0) {
++      await client.query("ROLLBACK");
++      return res.status(409).json({
++        message: "Username is already taken",
++      });
++    }
++
+     // Validate and normalize role (supports 'driver', 'Driver', 'sales_staff', 'Sales Staff', etc.)
+     const validRoles = ["admin", "manager", "sales_staff", "driver"];
+     const normalizedRole =
+@@ -29,8 +66,9 @@ const createStaff = async (req, res) => {
+       ? normalizedRole
+       : "sales_staff";
+ 
+-    // Create linked user record for role storage
+-    const username = `staff_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
++    const passwordHash = await bcrypt.hash(password, 10);
++
++    // Create linked user record with the real login credentials
+     const userResult = await client.query(
+       `
+       INSERT INTO users (
+@@ -42,8 +80,8 @@ const createStaff = async (req, res) => {
+       RETURNING id, role
+       `,
+       [
+-        username,
+-        "$2b$10$placeholder_staff_hash_only",
++        normalizedUsername,
++        passwordHash,
+         staffRole,
+       ]
+     );
+@@ -76,12 +114,19 @@ const createStaff = async (req, res) => {
+       staff: {
+         ...result.rows[0],
+         role: staffRole,
++        username: normalizedUsername,
+       },
+     });
+   } catch (error) {
+     await client.query("ROLLBACK");
+     console.error("Create staff error:", error);
+ 
++    if (error.code === "23505") {
++      return res.status(409).json({
++        message: "Username is already taken",
++      });
++    }
++
+     res.status(500).json({
+       message: "Internal server error",
+     });
+@@ -104,6 +149,7 @@ const getStaff = async (req, res) => {
+         s.name,
+         s.phone,
+         s.is_available,
++        u.username,
+         COALESCE(u.is_active, TRUE) AS is_active,
+         COALESCE(u.role::text, 'sales_staff') AS role,
+         s.created_at,
+diff --git a/frontend/src/pages/StaffPage.tsx b/frontend/src/pages/StaffPage.tsx
+index 2c1c92d..9bd3424 100644
+--- a/frontend/src/pages/StaffPage.tsx
++++ b/frontend/src/pages/StaffPage.tsx
+@@ -27,6 +27,10 @@ export const StaffPage: React.FC = () => {
+   const [role, setRole] = useState<StaffRole>('Driver');
+   const [phone, setPhone] = useState('');
+   const [status, setStatus] = useState<StaffStatus>('Available');
++  const [username, setUsername] = useState('');
++  const [password, setPassword] = useState('');
++  const [confirmPassword, setConfirmPassword] = useState('');
++  const [formError, setFormError] = useState('');
+ 
+   // Normal active staff list (deactivated staff are excluded)
+   const activeStaff = staff.filter((s) => s.status !== 'Inactive' && s.isActive !== false);
+@@ -37,6 +41,10 @@ export const StaffPage: React.FC = () => {
+     setRole('Driver');
+     setPhone('');
+     setStatus('Available');
++    setUsername('');
++    setPassword('');
++    setConfirmPassword('');
++    setFormError('');
+     setIsModalOpen(true);
+   };
+ 
+@@ -51,6 +59,7 @@ export const StaffPage: React.FC = () => {
+ 
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
++    setFormError('');
+     if (!name || !phone) return;
+ 
+     if (editingStaff) {
+@@ -61,17 +70,41 @@ export const StaffPage: React.FC = () => {
+         status,
+       });
+     } else {
+-      await addStaff({
+-        name,
+-        role,
+-        phone,
+-        status,
+-        isActive: true,
+-      });
++      if (!username.trim()) {
++        setFormError('Username is required');
++        return;
++      }
++      if (password.length < 6) {
++        setFormError('Password must be at least 6 characters');
++        return;
++      }
++      if (password !== confirmPassword) {
++        setFormError('Passwords do not match');
++        return;
++      }
++
++      try {
++        await addStaff({
++          name,
++          role,
++          phone,
++          status,
++          isActive: true,
++          username: username.trim(),
++          password,
++          confirmPassword,
++        });
++      } catch (err: any) {
++        setFormError(err?.message || 'Failed to create staff member');
++        return;
++      }
+     }
+ 
+     setName('');
+     setPhone('');
++    setUsername('');
++    setPassword('');
++    setConfirmPassword('');
+     setEditingStaff(null);
+     setIsModalOpen(false);
+   };
+@@ -266,6 +299,47 @@ export const StaffPage: React.FC = () => {
+             />
+           </div>
+ 
++          {!editingStaff && (
++            <>
++              <div>
++                <Input
++                  label="Username (Login ID)"
++                  placeholder="e.g. anand.driver"
++                  value={username}
++                  onChange={(e) => setUsername(e.target.value)}
++                  required
++                />
++              </div>
++
++              <div className="grid grid-cols-2 gap-3">
++                <div>
++                  <Input
++                    label="Password"
++                    type="password"
++                    placeholder="Min. 6 characters"
++                    value={password}
++                    onChange={(e) => setPassword(e.target.value)}
++                    required
++                  />
++                </div>
++                <div>
++                  <Input
++                    label="Confirm Password"
++                    type="password"
++                    placeholder="Re-enter password"
++                    value={confirmPassword}
++                    onChange={(e) => setConfirmPassword(e.target.value)}
++                    required
++                  />
++                </div>
++              </div>
++            </>
++          )}
++
++          {formError && (
++            <p className="text-rose-600 font-medium">{formError}</p>
++          )}
++
+           <div className="flex justify-end gap-2.5 pt-3 border-t border-slate-100">
+             <Button
+               type="button"

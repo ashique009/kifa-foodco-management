@@ -61,6 +61,10 @@ interface BakeryContextType {
   // Auth state
   isAuthenticated: boolean;
   isLoadingData: boolean;
+  isGlobalLoading: boolean;
+  globalLoadingMessage?: string;
+  globalLoadingSubMessage?: string;
+  setGlobalLoading: (isLoading: boolean, message?: string) => void;
   currentUser: { id?: string; username?: string; name: string; role: string; userRole: 'admin' | 'staff' };
   login: (user: any) => void;
   logout: () => void;
@@ -176,7 +180,34 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   });
 
   const isAuthenticated = Boolean(token);
-  const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
+  const [isLoadingData, setIsLoadingData] = useState<boolean>(() => Boolean(getToken()));
+  const [actionLoading, setActionLoading] = useState<{ isLoading: boolean; message?: string }>({
+    isLoading: false,
+  });
+
+  const setGlobalLoading = useCallback((isLoading: boolean, message?: string) => {
+    setActionLoading({ isLoading, message });
+  }, []);
+
+  const withGlobalLoading = useCallback(
+    async <T,>(action: () => Promise<T>, message: string): Promise<T> => {
+      setActionLoading({ isLoading: true, message });
+      try {
+        return await action();
+      } finally {
+        setActionLoading({ isLoading: false });
+      }
+    },
+    []
+  );
+
+  const isGlobalLoading = (isAuthenticated && isLoadingData) || actionLoading.isLoading;
+  const globalLoadingMessage = actionLoading.isLoading
+    ? actionLoading.message || 'Processing request...'
+    : 'Loading KIFA FoodCo...';
+  const globalLoadingSubMessage = actionLoading.isLoading
+    ? undefined
+    : 'Syncing system records and inventory...';
 
   // Entities state
   const [products, setProducts] = useState<Product[]>([]);
@@ -659,110 +690,121 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // 1. Create Trip
   const createTrip = async (tripData: Omit<Trip, 'id' | 'tripNumber'>): Promise<Trip | null> => {
-    try {
-      // Map loaded items
-      const itemsPayload = tripData.loadedItems
-        .filter((item) => item.loadedQty > 0)
-        .map((item) => ({
-          product_id: item.productId,
-          quantity: item.loadedQty,
-        }));
-
-      // Map shops
-      const shopsPayload = tripData.shops
-        .filter((sh) => Boolean(sh.shopId))
-        .map((sh, index) => ({
-          shop_id: sh.shopId,
-          visit_order: sh.sequence || index + 1,
-        }));
-
-      // Create trip atomically on backend with all items and shops
-      const res = await tripsApi.create({
-        vehicle_id: tripData.vehicleId,
-        driver_id: tripData.driverId,
-        sales_staff_id: tripData.staffId,
-        trip_date: tripData.date,
-        items: itemsPayload,
-        shops: shopsPayload,
-      });
-
-      const newTripId = res.trip.id;
-
-      showToast('success', 'Trip Created', `Trip created and loaded successfully.`);
-      await refreshAllData();
-
-      // Fetch newly created trip details directly from backend to avoid stale React state
+    return withGlobalLoading(async () => {
       try {
-        const [tShopsRes, tStockRes] = await Promise.all([
-          tripsApi.getShops(newTripId).catch(() => ({ shops: [] })),
-          tripsApi.getStock(newTripId).catch(() => ({ stock: [] })),
-        ]);
+        // Map loaded items
+        const itemsPayload = tripData.loadedItems
+          .filter((item) => item.loadedQty > 0)
+          .map((item) => ({
+            product_id: item.productId,
+            quantity: item.loadedQty,
+          }));
 
-        const tripShops = (tShopsRes.shops || []).map((ts: any) => ({
-          shopId: ts.shop_id,
-          shopName: ts.shop_name,
-          ownerName: ts.owner_name || '',
-          phone: ts.phone || '',
-          address: ts.address || '',
-          sequence: ts.visit_order || 1,
-          status: ts.visited_at ? ('completed' as const) : ('pending' as const),
-          visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
-        }));
+        // Map shops
+        const shopsPayload = tripData.shops
+          .filter((sh) => Boolean(sh.shopId))
+          .map((sh, index) => ({
+            shop_id: sh.shopId,
+            visit_order: sh.sequence || index + 1,
+          }));
 
-        const loadedItems = (tStockRes.stock || []).map((st: any) => ({
-          productId: st.product_id,
-          productName: st.product_name,
-          unit: (st.unit || 'packet') as ProductUnit,
-          loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
-          soldQty: Number(st.sold_quantity || 0),
-          damagedQty: Number(st.damaged_quantity || 0),
-          returnedQty: Number(st.returned_quantity || 0),
-          vanBalance: Number(st.van_balance !== undefined ? st.van_balance : st.loaded_quantity || 0),
-          unitPrice: Number(st.unit_price || 30),
-        }));
+        // Create trip atomically on backend with all items and shops
+        const res = await tripsApi.create({
+          vehicle_id: tripData.vehicleId,
+          driver_id: tripData.driverId,
+          sales_staff_id: tripData.staffId,
+          trip_date: tripData.date,
+          items: itemsPayload,
+          shops: shopsPayload,
+        });
 
-        return {
-          ...tripData,
-          id: newTripId,
-          tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
-          status: mapBackendTripStatus(res.trip.status || 'loaded'),
-          shops: tripShops.length > 0 ? tripShops : tripData.shops,
-          loadedItems: loadedItems.length > 0 ? loadedItems : tripData.loadedItems,
-        };
-      } catch {
-        return {
-          ...tripData,
-          id: newTripId,
-          tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
-          status: mapBackendTripStatus(res.trip.status || 'loaded'),
-        };
+        const newTripId = res.trip.id;
+
+        showToast('success', 'Trip Created', `Trip created and loaded successfully.`);
+        await refreshAllData();
+
+        // Fetch newly created trip details directly from backend to avoid stale React state
+        try {
+          const [tShopsRes, tStockRes] = await Promise.all([
+            tripsApi.getShops(newTripId).catch(() => ({ shops: [] })),
+            tripsApi.getStock(newTripId).catch(() => ({ stock: [] })),
+          ]);
+
+          const tripShops = (tShopsRes.shops || []).map((ts: any) => ({
+            shopId: ts.shop_id,
+            shopName: ts.shop_name,
+            ownerName: ts.owner_name || '',
+            phone: ts.phone || '',
+            address: ts.address || '',
+            sequence: ts.visit_order || 1,
+            status: ts.visited_at ? ('completed' as const) : ('pending' as const),
+            visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+          }));
+
+          const loadedItems = (tStockRes.stock || []).map((st: any) => ({
+            productId: st.product_id,
+            productName: st.product_name,
+            unit: (st.unit || 'packet') as ProductUnit,
+            loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
+            soldQty: Number(st.sold_quantity || 0),
+            damagedQty: Number(st.damaged_quantity || 0),
+            returnedQty: Number(st.returned_quantity || 0),
+            vanBalance: Number(st.van_balance !== undefined ? st.van_balance : st.loaded_quantity || 0),
+            unitPrice: Number(st.unit_price || 30),
+          }));
+
+          return {
+            ...tripData,
+            id: newTripId,
+            tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
+            status: mapBackendTripStatus(res.trip.status || 'loaded'),
+            shops: tripShops.length > 0 ? tripShops : tripData.shops,
+            loadedItems: loadedItems.length > 0 ? loadedItems : tripData.loadedItems,
+          };
+        } catch {
+          return {
+            ...tripData,
+            id: newTripId,
+            tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
+            status: mapBackendTripStatus(res.trip.status || 'loaded'),
+          };
+        }
+      } catch (err: any) {
+        console.error('Create trip error:', err);
+        const errorMsg =
+          err.response?.data?.message || err.message || 'Error communicating with backend.';
+        showToast('error', 'Failed to Create Trip', errorMsg);
+        return null;
       }
-    } catch (err: any) {
-      console.error('Create trip error:', err);
-      const errorMsg =
-        err.response?.data?.message || err.message || 'Error communicating with backend.';
-      showToast('error', 'Failed to Create Trip', errorMsg);
-      return null;
-    }
+    }, 'Creating and loading trip...');
   };
 
   // 2. Update Trip Status (including reconcile on Completed)
   const updateTripStatus = async (tripId: string, status: TripStatus) => {
-    try {
-      if (status === 'Completed') {
-        await tripsApi.reconcile(tripId);
-        showToast('success', 'Trip Reconciled & Completed', 'Van stock returned to godown and vehicle released.');
-      } else if (status === 'In Progress') {
-        await tripsApi.start(tripId);
-        showToast('success', 'Trip Started', 'Vehicle route is now in progress.');
-      } else {
-        showToast('info', 'Status Updated', `Trip marked as ${status}`);
+    const loadingMessage =
+      status === 'Completed'
+        ? 'Reconciling and completing trip...'
+        : status === 'In Progress'
+        ? 'Starting trip route...'
+        : `Updating trip to ${status}...`;
+
+    return withGlobalLoading(async () => {
+      try {
+        if (status === 'Completed') {
+          await tripsApi.reconcile(tripId);
+          showToast('success', 'Trip Reconciled & Completed', 'Van stock returned to godown and vehicle released.');
+        } else if (status === 'In Progress') {
+          await tripsApi.start(tripId);
+          showToast('success', 'Trip Started', 'Vehicle route is now in progress.');
+        } else {
+          showToast('info', 'Status Updated', `Trip marked as ${status}`);
+        }
+        await refreshAllData();
+      } catch (err: any) {
+        console.error('Update trip status error:', err);
+        showToast('error', 'Status Update Failed', err.message || 'Error communicating with backend.');
       }
-      await refreshAllData();
-    } catch (err: any) {
-      console.error('Update trip status error:', err);
-      showToast('error', 'Status Update Failed', err.message || 'Error communicating with backend.');
-    }
+    }, loadingMessage);
   };
 
   // Mark Shop Visited on Trip
@@ -779,163 +821,169 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // 3. Record Sale
   const recordSale = async (
-    saleData: Omit<Sale, 'id' | 'invoiceNumber' | 'date' | 'time'>
+    saleData: Omit<Sale, 'id' | 'invoiceNumber' | 'date' | 'time'> & { idempotencyKey?: string }
   ): Promise<Sale | null> => {
-    try {
-      const activeTripId = saleData.tripId || trips.find((t) => t.status === 'In Progress' || t.status === 'Loaded')?.id;
+    return withGlobalLoading(async () => {
+      try {
+        const activeTripId = saleData.tripId || trips.find((t) => t.status === 'In Progress' || t.status === 'Loaded')?.id;
 
-      if (!activeTripId) {
-        showToast('error', 'No Active Trip', 'Sales must be recorded during an active trip.');
+        if (!activeTripId) {
+          showToast('error', 'No Active Trip', 'Sales must be recorded during an active trip.');
+          return null;
+        }
+
+        // Fetch current trip stock to map batch_id
+        let tripStockList: any[] = [];
+        try {
+          const sRes = await tripsApi.getStock(activeTripId);
+          tripStockList = sRes.stock || [];
+        } catch {
+          tripStockList = [];
+        }
+
+        const itemsForBackend = await Promise.all(
+          saleData.items.map(async (item) => {
+            // Find batch in trip stock
+            const matchInTrip = tripStockList.find((ts) => ts.product_id === item.productId);
+            let batchId = matchInTrip?.batch_id;
+
+            if (!batchId) {
+              // Check batches API
+              const bRes = await batchesApi.getByProduct(item.productId).catch(() => ({ batches: [] }));
+              batchId = bRes.batches[0]?.id;
+            }
+
+            return {
+              product_id: item.productId,
+              batch_id: batchId || '00000000-0000-0000-0000-000000000000',
+              quantity: item.quantity,
+              unit_price: item.unitPrice,
+              discount: 0,
+            };
+          })
+        );
+
+        const saleRes = await salesApi.create({
+          trip_id: activeTripId,
+          shop_id: saleData.shopId,
+          items: itemsForBackend,
+          discount: saleData.discount,
+          notes: `Recorded via Web UI`,
+          idempotency_key: saleData.idempotencyKey,
+        });
+
+        // If immediate payment was made (cash / upi / card / partial), record payment
+        if (saleData.paidAmount > 0 && saleData.paymentMethod !== 'Due') {
+          const payMethod =
+            saleData.paymentMethod === 'Partial'
+              ? 'cash'
+              : (saleData.paymentMethod.toLowerCase().replace(' ', '_') as any);
+
+          await paymentsApi.create({
+            shop_id: saleData.shopId,
+            sale_id: saleRes.sale.id,
+            payment_method: payMethod,
+            amount: saleData.paidAmount,
+            notes: `Instant payment for invoice ${saleRes.sale.invoice_number}`,
+            idempotency_key: saleData.idempotencyKey ? `pay-${saleData.idempotencyKey}` : undefined,
+          }).catch((err) => console.warn('Auto payment recording warning:', err));
+        }
+
+        showToast('success', 'Sale Recorded', `Invoice #${saleRes.sale.invoice_number} saved.`);
+        await refreshAllData();
+        return null;
+      } catch (err: any) {
+        console.error('Record sale error:', err);
+        showToast('error', 'Sale Failed', err.message || 'Error recording sale.');
         return null;
       }
-
-      // Fetch current trip stock to map batch_id
-      let tripStockList: any[] = [];
-      try {
-        const sRes = await tripsApi.getStock(activeTripId);
-        tripStockList = sRes.stock || [];
-      } catch {
-        tripStockList = [];
-      }
-
-      const itemsForBackend = await Promise.all(
-        saleData.items.map(async (item) => {
-          // Find batch in trip stock
-          const matchInTrip = tripStockList.find((ts) => ts.product_id === item.productId);
-          let batchId = matchInTrip?.batch_id;
-
-          if (!batchId) {
-            // Check batches API
-            const bRes = await batchesApi.getByProduct(item.productId).catch(() => ({ batches: [] }));
-            batchId = bRes.batches[0]?.id;
-          }
-
-          return {
-            product_id: item.productId,
-            batch_id: batchId || '00000000-0000-0000-0000-000000000000',
-            quantity: item.quantity,
-            unit_price: item.unitPrice,
-            discount: 0,
-          };
-        })
-      );
-
-      const saleRes = await salesApi.create({
-        trip_id: activeTripId,
-        shop_id: saleData.shopId,
-        items: itemsForBackend,
-        discount: saleData.discount,
-        notes: `Recorded via Web UI`,
-        idempotency_key: saleData.idempotencyKey,
-      });
-
-      // If immediate payment was made (cash / upi / card / partial), record payment
-      if (saleData.paidAmount > 0 && saleData.paymentMethod !== 'Due') {
-        const payMethod =
-          saleData.paymentMethod === 'Partial'
-            ? 'cash'
-            : (saleData.paymentMethod.toLowerCase().replace(' ', '_') as any);
-
-        await paymentsApi.create({
-          shop_id: saleData.shopId,
-          sale_id: saleRes.sale.id,
-          payment_method: payMethod,
-          amount: saleData.paidAmount,
-          notes: `Instant payment for invoice ${saleRes.sale.invoice_number}`,
-          idempotency_key: saleData.idempotencyKey ? `pay-${saleData.idempotencyKey}` : undefined,
-        }).catch((err) => console.warn('Auto payment recording warning:', err));
-      }
-
-      showToast('success', 'Sale Recorded', `Invoice #${saleRes.sale.invoice_number} saved.`);
-      await refreshAllData();
-      return null;
-    } catch (err: any) {
-      console.error('Record sale error:', err);
-      showToast('error', 'Sale Failed', err.message || 'Error recording sale.');
-      return null;
-    }
+    }, 'Recording sale...');
   };
 
   // 4. Receive Payment
   const receivePayment = async (
     paymentData: Omit<Payment, 'id' | 'receiptNumber' | 'date'> & { idempotencyKey?: string }
   ): Promise<Payment | null> => {
-    try {
-      const backendMethod = paymentData.method.toLowerCase().replace(' ', '_') as any;
+    return withGlobalLoading(async () => {
+      try {
+        const backendMethod = paymentData.method.toLowerCase().replace(' ', '_') as any;
 
-      const idempotencyKey =
-        paymentData.idempotencyKey ||
-        (typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `pay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+        const idempotencyKey =
+          paymentData.idempotencyKey ||
+          (typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `pay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
 
-      const res = await paymentsApi.create({
-        shop_id: paymentData.shopId,
-        sale_id: paymentData.saleId,
-        payment_method: backendMethod,
-        amount: paymentData.amount,
-        reference_number: paymentData.reference,
-        notes: paymentData.notes,
-        idempotency_key: idempotencyKey,
-      });
+        const res = await paymentsApi.create({
+          shop_id: paymentData.shopId,
+          sale_id: paymentData.saleId,
+          payment_method: backendMethod,
+          amount: paymentData.amount,
+          reference_number: paymentData.reference,
+          notes: paymentData.notes,
+          idempotency_key: idempotencyKey,
+        });
 
-      if (res.is_duplicate) {
-        showToast('info', 'Payment Already Processed', `Payment of ₹${paymentData.amount.toLocaleString('en-IN')} was already recorded.`);
-      } else {
-        showToast('success', 'Payment Received', `Collected ₹${paymentData.amount.toLocaleString('en-IN')}.`);
+        if (res.is_duplicate) {
+          showToast('info', 'Payment Already Processed', `Payment of ₹${paymentData.amount.toLocaleString('en-IN')} was already recorded.`);
+        } else {
+          showToast('success', 'Payment Received', `Collected ₹${paymentData.amount.toLocaleString('en-IN')}.`);
+        }
+        await refreshAllData();
+        return null;
+      } catch (err: any) {
+        console.error('Receive payment error:', err);
+        showToast('error', 'Payment Failed', err.message || 'Error recording payment.');
+        throw err;
       }
-      await refreshAllData();
-      return null;
-    } catch (err: any) {
-      console.error('Receive payment error:', err);
-      showToast('error', 'Payment Failed', err.message || 'Error recording payment.');
-      throw err;
-    }
+    }, 'Processing payment...');
   };
 
   // 5. Record Return
   const recordReturn = async (
     returnData: Omit<ReturnItem, 'id' | 'date'>
   ): Promise<ReturnItem | null> => {
-    try {
-      const activeTripId = returnData.tripId || trips.find((t) => t.status === 'In Progress' || t.status === 'Loaded')?.id;
+    return withGlobalLoading(async () => {
+      try {
+        const activeTripId = returnData.tripId || trips.find((t) => t.status === 'In Progress' || t.status === 'Loaded')?.id;
 
-      if (!activeTripId) {
-        showToast('error', 'No Active Trip', 'Returns must be attached to an active trip.');
+        if (!activeTripId) {
+          showToast('error', 'No Active Trip', 'Returns must be attached to an active trip.');
+          return null;
+        }
+
+        const bRes = await batchesApi.getByProduct(returnData.productId).catch(() => ({ batches: [] }));
+        const batchId = bRes.batches[0]?.id || '00000000-0000-0000-0000-000000000000';
+
+        let reasonCode: 'shop_return' | 'damaged' | 'expired' = 'shop_return';
+        if (returnData.reason === 'Damaged') reasonCode = 'damaged';
+        else if (returnData.reason === 'Expired') reasonCode = 'expired';
+
+        await returnsApi.create({
+          trip_id: activeTripId,
+          shop_id: returnData.shopId,
+          reason: reasonCode,
+          items: [
+            {
+              product_id: returnData.productId,
+              batch_id: batchId,
+              quantity: returnData.quantity,
+              unit_price: returnData.unitPrice,
+            },
+          ],
+          notes: returnData.notes,
+          idempotency_key: returnData.idempotencyKey,
+        });
+
+        showToast('success', 'Return Recorded', `${returnData.quantity} ${returnData.unit} returned.`);
+        await refreshAllData();
+        return null;
+      } catch (err: any) {
+        console.error('Record return error:', err);
+        showToast('error', 'Return Failed', err.message || 'Error recording return.');
         return null;
       }
-
-      const bRes = await batchesApi.getByProduct(returnData.productId).catch(() => ({ batches: [] }));
-      const batchId = bRes.batches[0]?.id || '00000000-0000-0000-0000-000000000000';
-
-      let reasonCode: 'shop_return' | 'damaged' | 'expired' = 'shop_return';
-      if (returnData.reason === 'Damaged') reasonCode = 'damaged';
-      else if (returnData.reason === 'Expired') reasonCode = 'expired';
-
-      await returnsApi.create({
-        trip_id: activeTripId,
-        shop_id: returnData.shopId,
-        reason: reasonCode,
-        items: [
-          {
-            product_id: returnData.productId,
-            batch_id: batchId,
-            quantity: returnData.quantity,
-            unit_price: returnData.unitPrice,
-          },
-        ],
-        notes: returnData.notes,
-        idempotency_key: returnData.idempotencyKey,
-      });
-
-      showToast('success', 'Return Recorded', `${returnData.quantity} ${returnData.unit} returned.`);
-      await refreshAllData();
-      return null;
-    } catch (err: any) {
-      console.error('Record return error:', err);
-      showToast('error', 'Return Failed', err.message || 'Error recording return.');
-      return null;
-    }
+    }, 'Recording return...');
   };
 
   // 5b. Record Transit Damage
@@ -949,24 +997,26 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       idempotency_key?: string;
     }
   ): Promise<boolean> => {
-    try {
-      const res = await tripsApi.recordDamage(tripId, data);
-      showToast(
-        'success',
-        'Damage Recorded',
-        res.message || 'Transit damage recorded successfully.'
-      );
-      await refreshAllData();
-      return true;
-    } catch (err: any) {
-      console.error('Record transit damage error:', err);
-      showToast(
-        'error',
-        'Damage Recording Failed',
-        err.response?.data?.message || err.message || 'Error communicating with backend.'
-      );
-      return false;
-    }
+    return withGlobalLoading(async () => {
+      try {
+        const res = await tripsApi.recordDamage(tripId, data);
+        showToast(
+          'success',
+          'Damage Recorded',
+          res.message || 'Transit damage recorded successfully.'
+        );
+        await refreshAllData();
+        return true;
+      } catch (err: any) {
+        console.error('Record transit damage error:', err);
+        showToast(
+          'error',
+          'Damage Recording Failed',
+          err.response?.data?.message || err.message || 'Error communicating with backend.'
+        );
+        return false;
+      }
+    }, 'Recording transit damage...');
   };
 
   // 6. Products CRUD
@@ -1029,19 +1079,21 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // 7. Shop CRUD
   const addShop = async (shopData: Omit<Shop, 'id' | 'totalSales' | 'totalCollected' | 'createdAt'>) => {
-    try {
-      await shopsApi.create({
-        shop_name: shopData.name,
-        owner_name: shopData.owner,
-        phone: shopData.phone,
-        address: shopData.address,
-        credit_limit: shopData.creditLimit,
-      });
-      showToast('success', 'Shop Added', `${shopData.name} registered.`);
-      await refreshAllData();
-    } catch (err: any) {
-      showToast('error', 'Failed to Add Shop', err.message);
-    }
+    return withGlobalLoading(async () => {
+      try {
+        await shopsApi.create({
+          shop_name: shopData.name,
+          owner_name: shopData.owner,
+          phone: shopData.phone,
+          address: shopData.address,
+          credit_limit: shopData.creditLimit,
+        });
+        showToast('success', 'Shop Added', `${shopData.name} registered.`);
+        await refreshAllData();
+      } catch (err: any) {
+        showToast('error', 'Failed to Add Shop', err.message);
+      }
+    }, 'Adding shop...');
   };
 
   const addShopToActiveTrip = async (
@@ -1055,99 +1107,105 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     },
     existingShopId?: string
   ): Promise<{ success: boolean; shopId?: string }> => {
-    try {
-      let createdShop: any = null;
-      let tripShopRow: any = null;
+    const loadingMessage = existingShopId
+      ? 'Assigning shop to active trip...'
+      : 'Adding new shop to trip...';
 
-      if (existingShopId) {
-        // Assign existing shop to active trip
-        const target = shops.find((s) => s.id === existingShopId);
-        const res = await tripsApi.addShop(tripId, { shop_id: existingShopId });
-        tripShopRow = res.trip_shop;
-        createdShop = target
-          ? {
-              id: target.id,
-              shop_name: target.name,
-              owner_name: target.owner,
-              phone: target.phone,
-              address: target.address,
-            }
-          : null;
-      } else if (shopData) {
-        // Create new shop atomically and attach to trip
-        const res = await tripsApi.addNewShop(tripId, {
-          shop_name: shopData.name,
-          owner_name: shopData.owner,
-          phone: shopData.phone,
-          address: shopData.address,
-          credit_limit: shopData.creditLimit,
-        });
-        createdShop = res.shop;
-        tripShopRow = res.trip_shop;
+    return withGlobalLoading(async () => {
+      try {
+        let createdShop: any = null;
+        let tripShopRow: any = null;
 
-        if (createdShop) {
-          const newShopModel: Shop = {
-            id: createdShop.id,
-            name: createdShop.shop_name,
-            owner: createdShop.owner_name || '',
-            phone: createdShop.phone || '',
-            address: createdShop.address || '',
-            route: createdShop.route || 'General Route',
-            outstanding: 0,
-            creditLimit: Number(createdShop.credit_limit || 0),
-            totalSales: 0,
-            totalCollected: 0,
-            createdAt: createdShop.created_at || new Date().toISOString(),
-          };
-          setShops((prev) => [newShopModel, ...prev.filter((s) => s.id !== newShopModel.id)]);
-        }
-      } else {
-        throw new Error('Shop data or existing shop ID is required');
-      }
+        if (existingShopId) {
+          // Assign existing shop to active trip
+          const target = shops.find((s) => s.id === existingShopId);
+          const res = await tripsApi.addShop(tripId, { shop_id: existingShopId });
+          tripShopRow = res.trip_shop;
+          createdShop = target
+            ? {
+                id: target.id,
+                shop_name: target.name,
+                owner_name: target.owner,
+                phone: target.phone,
+                address: target.address,
+              }
+            : null;
+        } else if (shopData) {
+          // Create new shop atomically and attach to trip
+          const res = await tripsApi.addNewShop(tripId, {
+            shop_name: shopData.name,
+            owner_name: shopData.owner,
+            phone: shopData.phone,
+            address: shopData.address,
+            credit_limit: shopData.creditLimit,
+          });
+          createdShop = res.shop;
+          tripShopRow = res.trip_shop;
 
-      const shopIdToUse = createdShop?.id || existingShopId || tripShopRow?.shop_id;
-      const targetShop =
-        shops.find((s) => s.id === shopIdToUse) ||
-        (createdShop
-          ? {
+          if (createdShop) {
+            const newShopModel: Shop = {
+              id: createdShop.id,
               name: createdShop.shop_name,
-              owner: createdShop.owner_name,
-              phone: createdShop.phone,
-              address: createdShop.address,
-            }
-          : null);
+              owner: createdShop.owner_name || '',
+              phone: createdShop.phone || '',
+              address: createdShop.address || '',
+              route: createdShop.route || 'General Route',
+              outstanding: 0,
+              creditLimit: Number(createdShop.credit_limit || 0),
+              totalSales: 0,
+              totalCollected: 0,
+              createdAt: createdShop.created_at || new Date().toISOString(),
+            };
+            setShops((prev) => [newShopModel, ...prev.filter((s) => s.id !== newShopModel.id)]);
+          }
+        } else {
+          throw new Error('Shop data or existing shop ID is required');
+        }
 
-      // Scoped update: update trip's shops in trips state
-      setTrips((prevTrips) =>
-        prevTrips.map((t) => {
-          if (t.id !== tripId) return t;
-          const nextSeq = tripShopRow?.visit_order || t.shops.length + 1;
-          const newTripShop: TripShop = {
-            shopId: shopIdToUse,
-            shopName: targetShop?.name || 'New Shop',
-            ownerName: targetShop?.owner || '',
-            phone: targetShop?.phone || '',
-            address: targetShop?.address || '',
-            sequence: nextSeq,
-            status: 'pending',
-          };
-          // Avoid duplicate entry if already present
-          if (t.shops.some((s) => s.shopId === shopIdToUse)) return t;
-          return {
-            ...t,
-            shops: [...t.shops, newTripShop],
-          };
-        })
-      );
+        const shopIdToUse = createdShop?.id || existingShopId || tripShopRow?.shop_id;
+        const targetShop =
+          shops.find((s) => s.id === shopIdToUse) ||
+          (createdShop
+            ? {
+                name: createdShop.shop_name,
+                owner: createdShop.owner_name,
+                phone: createdShop.phone,
+                address: createdShop.address,
+              }
+            : null);
 
-      showToast('success', 'Shop Added to Trip', `${targetShop?.name || 'Shop'} added to active route.`);
-      return { success: true, shopId: shopIdToUse };
-    } catch (err: any) {
-      console.error('Add shop to active trip error:', err);
-      const msg = err.response?.data?.message || err.message || 'Failed to add shop to trip';
-      showToast('error', 'Add Shop Failed', msg);
-      return { success: false };
-    }
+        // Scoped update: update trip's shops in trips state
+        setTrips((prevTrips) =>
+          prevTrips.map((t) => {
+            if (t.id !== tripId) return t;
+            const nextSeq = tripShopRow?.visit_order || t.shops.length + 1;
+            const newTripShop: TripShop = {
+              shopId: shopIdToUse,
+              shopName: targetShop?.name || 'New Shop',
+              ownerName: targetShop?.owner || '',
+              phone: targetShop?.phone || '',
+              address: targetShop?.address || '',
+              sequence: nextSeq,
+              status: 'pending',
+            };
+            // Avoid duplicate entry if already present
+            if (t.shops.some((s) => s.shopId === shopIdToUse)) return t;
+            return {
+              ...t,
+              shops: [...t.shops, newTripShop],
+            };
+          })
+        );
+
+        showToast('success', 'Shop Added to Trip', `${targetShop?.name || 'Shop'} added to active route.`);
+        return { success: true, shopId: shopIdToUse };
+      } catch (err: any) {
+        console.error('Add shop to active trip error:', err);
+        const msg = err.response?.data?.message || err.message || 'Failed to add shop to trip';
+        showToast('error', 'Add Shop Failed', msg);
+        return { success: false };
+      }
+    }, loadingMessage);
   };
 
   const updateShop = (id: string, updated: Partial<Shop>) => {
@@ -1199,35 +1257,21 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // 9. Staff CRUD
   const addStaff = async (staffData: Omit<Staff, 'id'> & { username?: string; password?: string; confirmPassword?: string; designation?: string }) => {
-    try {
-      const res = await staffApi.create({
-        name: staffData.name,
-        phone: staffData.phone,
-        username: staffData.username,
-        password: staffData.password,
-        confirmPassword: staffData.confirmPassword,
-        role: mapStaffRoleToBackend(staffData.role),
-        designation: staffData.designation,
-      });
+    return withGlobalLoading(async () => {
+      try {
+        const res = await staffApi.create({
+          name: staffData.name,
+          phone: staffData.phone,
+          username: staffData.username,
+          password: staffData.password,
+          confirmPassword: staffData.confirmPassword,
+          role: mapStaffRoleToBackend(staffData.role),
+          designation: staffData.designation,
+        });
 
-      if (res?.staff?.id && res?.staff?.name) {
-        const s = res.staff;
-        const newStaffMember: Staff = {
-          id: s.id,
-          name: s.name,
-          username: s.username || '',
-          role: mapBackendStaffRole(s.role),
-          phone: s.phone || '',
-          status: s.is_available ? 'Available' : 'On Trip',
-          isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
-          userId: s.user_id,
-        };
-        setStaff((prev) => [newStaffMember, ...prev.filter((item) => item.id !== newStaffMember.id)]);
-      } else {
-        // Scoped fallback: Refetch only staff if response lacks complete fields
-        const staffRes = await staffApi.getAll().catch(() => ({ staff: [] }));
-        setStaff(
-          (staffRes.staff || []).map((s: any) => ({
+        if (res?.staff?.id && res?.staff?.name) {
+          const s = res.staff;
+          const newStaffMember: Staff = {
             id: s.id,
             name: s.name,
             username: s.username || '',
@@ -1236,15 +1280,31 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             status: s.is_available ? 'Available' : 'On Trip',
             isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
             userId: s.user_id,
-          }))
-        );
-      }
+          };
+          setStaff((prev) => [newStaffMember, ...prev.filter((item) => item.id !== newStaffMember.id)]);
+        } else {
+          // Scoped fallback: Refetch only staff if response lacks complete fields
+          const staffRes = await staffApi.getAll().catch(() => ({ staff: [] }));
+          setStaff(
+            (staffRes.staff || []).map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              username: s.username || '',
+              role: mapBackendStaffRole(s.role),
+              phone: s.phone || '',
+              status: s.is_available ? 'Available' : 'On Trip',
+              isActive: s.is_active !== undefined ? Boolean(s.is_active) : true,
+              userId: s.user_id,
+            }))
+          );
+        }
 
-      showToast('success', 'User Created', `${staffData.name} registered successfully.`);
-    } catch (err: any) {
-      showToast('error', 'Failed to Create User', err.message);
-      throw err;
-    }
+        showToast('success', 'User Created', `${staffData.name} registered successfully.`);
+      } catch (err: any) {
+        showToast('error', 'Failed to Create User', err.message);
+        throw err;
+      }
+    }, 'Creating user account...');
   };
 
   const updateStaff = (id: string, updated: Partial<Staff>) => {
@@ -1426,6 +1486,10 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       value={{
         isAuthenticated,
         isLoadingData,
+        isGlobalLoading,
+        globalLoadingMessage,
+        globalLoadingSubMessage,
+        setGlobalLoading,
         currentUser,
         login,
         logout,

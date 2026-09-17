@@ -24,6 +24,7 @@ import { RecordSaleModal } from './pages/RecordSaleModal';
 import { ReceivePaymentModal } from './pages/ReceivePaymentModal';
 import { useBakery } from './context/BakeryContext';
 import { LoginPage } from './pages/LoginPage';
+import { LoadingOverlay } from './components/ui/LoadingOverlay';
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, login } = useBakery();
@@ -225,9 +226,21 @@ const AppContent: React.FC = () => {
   );
 };
 
+const GlobalLoading: React.FC = () => {
+  const { isGlobalLoading, globalLoadingMessage, globalLoadingSubMessage } = useBakery();
+  return (
+    <LoadingOverlay
+      isVisible={isGlobalLoading}
+      message={globalLoadingMessage}
+      subMessage={globalLoadingSubMessage}
+    />
+  );
+};
+
 export function App() {
   return (
     <BakeryProvider>
+      <GlobalLoading />
       <AppContent />
     </BakeryProvider>
   );

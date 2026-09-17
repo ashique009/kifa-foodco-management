@@ -43,12 +43,14 @@ export const setStoredUser = (user: AuthUser): void => {
 export class ApiError extends Error {
   status: number;
   data: any;
+  isNetworkError: boolean;
 
-  constructor(status: number, message: string, data?: any) {
+  constructor(status: number, message: string, data?: any, isNetworkError: boolean = false) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.data = data;
+    this.isNetworkError = isNetworkError;
   }
 }
 
@@ -97,8 +99,9 @@ export async function request<T = any>(
   } catch (networkErr: any) {
     throw new ApiError(
       0,
-      'Unable to connect to backend server. Please make sure the server is running.',
-      networkErr
+      'Unable to connect to backend server. The service may be waking up.',
+      networkErr,
+      true
     );
   }
 
@@ -124,7 +127,7 @@ export async function request<T = any>(
     const message =
       (responseData && typeof responseData === 'object' && responseData.message) ||
       `Request failed with status ${response.status}`;
-    throw new ApiError(response.status, message, responseData);
+    throw new ApiError(response.status, message, responseData, false);
   }
 
   return responseData as T;

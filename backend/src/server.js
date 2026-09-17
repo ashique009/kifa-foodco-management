@@ -27,12 +27,16 @@ const allowedOrigins = [
     : []),
 ];
 
+// Narrowly scoped HTTPS pattern for Cloudflare Pages production and preview branches
+const cloudflarePagesRegex = /^https:\/\/([a-z0-9-]+\.)?kifa-foodco-management\.pages\.dev$/;
+
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       if (
         allowedOrigins.includes(origin) ||
+        cloudflarePagesRegex.test(origin) ||
         (process.env.NODE_ENV !== "production" &&
           (origin.startsWith("http://localhost:") ||
             origin.startsWith("http://127.0.0.1:")))

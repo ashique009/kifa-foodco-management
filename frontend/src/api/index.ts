@@ -319,3 +319,8 @@ export const settingsApi = {
   }) => api.put<{ message: string; settings: BusinessSettings }>('/api/settings/invoice', data),
 };
 
+export const healthApi = {
+  check: () => api.get<{ message?: string; status?: string }>('/'),
+};
+
+

@@ -198,26 +198,32 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const isAuthenticated = Boolean(token);
   const [isLoadingData, setIsLoadingData] = useState<boolean>(() => Boolean(getToken()));
-  const [actionLoading, setActionLoading] = useState<{ isLoading: boolean; message?: string }>({
-    isLoading: false,
-  });
+  const [loadingCount, setLoadingCount] = useState(0);
+  const [loadingMessage, setLoadingMessageState] = useState<string | undefined>(undefined);
 
   const setGlobalLoading = useCallback((isLoading: boolean, message?: string) => {
-    setActionLoading({ isLoading, message });
+    if (isLoading) {
+      setLoadingMessageState(message);
+      setLoadingCount((c) => c + 1);
+    } else {
+      setLoadingCount((c) => Math.max(0, c - 1));
+    }
   }, []);
 
   const withGlobalLoading = useCallback(
     async <T,>(action: () => Promise<T>, message: string): Promise<T> => {
-      setActionLoading({ isLoading: true, message });
+      setLoadingMessageState(message);
+      setLoadingCount((c) => c + 1);
       try {
         return await action();
       } finally {
-        setActionLoading({ isLoading: false });
+        setLoadingCount((c) => Math.max(0, c - 1));
       }
     },
     []
   );
 
+  const actionLoading = { isLoading: loadingCount > 0, message: loadingMessage };
   const isGlobalLoading = (isAuthenticated && isLoadingData) || actionLoading.isLoading;
   const globalLoadingMessage = actionLoading.isLoading
     ? actionLoading.message || 'Processing request...'

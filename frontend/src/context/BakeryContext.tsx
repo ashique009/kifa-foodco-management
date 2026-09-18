@@ -1091,15 +1091,35 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const addShop = async (shopData: Omit<Shop, 'id' | 'totalSales' | 'totalCollected' | 'createdAt'>) => {
     return withGlobalLoading(async () => {
       try {
-        await shopsApi.create({
+        const res = await shopsApi.create({
           shop_name: shopData.name,
           owner_name: shopData.owner,
           phone: shopData.phone,
           address: shopData.address,
           credit_limit: shopData.creditLimit,
         });
+
+        if (res?.shop?.id) {
+          const s = res.shop;
+          const newShop: Shop = {
+            id: s.id,
+            name: s.shop_name,
+            owner: s.owner_name || '',
+            phone: s.phone || '',
+            address: s.address || '',
+            route: 'Town Route',
+            outstanding: 0,
+            creditLimit: Number(s.credit_limit || 0),
+            totalSales: 0,
+            totalCollected: 0,
+            createdAt: s.created_at ? s.created_at.slice(0, 10) : '',
+          };
+          setShops((prev) => [newShop, ...prev.filter((item) => item.id !== newShop.id)]);
+        } else {
+          await refreshAllData();
+        }
+
         showToast('success', 'Shop Added', `${shopData.name} registered.`);
-        await refreshAllData();
       } catch (err: any) {
         showToast('error', 'Failed to Add Shop', err.message);
       }

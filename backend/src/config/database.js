@@ -1,8 +1,38 @@
 const { Pool } = require("pg");
-require("dotenv").config();
+
+// Snapshot explicitly supplied environment variables before loading .env
+const initialEnv = { ...process.env };
+
+// Load .env as fallback for local development
+require("dotenv").config({ override: false });
+
+// Ensure explicitly supplied environment variables always take precedence over .env
+for (const [key, value] of Object.entries(initialEnv)) {
+  if (value !== undefined) {
+    process.env[key] = value;
+  }
+}
+
+// Normalize connectionString if provided via process.env.DATABASE_URL
+let connectionString = process.env.DATABASE_URL ? process.env.DATABASE_URL.trim() : null;
+if (connectionString) {
+  if (connectionString.startsWith("DATABASE_URL=")) {
+    connectionString = connectionString.slice("DATABASE_URL=".length).trim();
+  }
+  if (
+    (connectionString.startsWith('"') && connectionString.endsWith('"')) ||
+    (connectionString.startsWith("'") && connectionString.endsWith("'"))
+  ) {
+    connectionString = connectionString.slice(1, -1).trim();
+  }
+  if (!connectionString) {
+    connectionString = null;
+  } else {
+    process.env.DATABASE_URL = connectionString;
+  }
+}
 
 const isProduction = process.env.NODE_ENV === "production";
-const connectionString = process.env.DATABASE_URL;
 
 const poolConfig = connectionString
   ? {

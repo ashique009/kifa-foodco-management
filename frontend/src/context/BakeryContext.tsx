@@ -342,6 +342,47 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return 'sales_staff';
   };
 
+  // Scoped refresh: products + godown stock only (used by refreshAllData and
+  // by lighter-weight mutations like trip creation that only affect stock)
+  const refreshProductsAndStock = useCallback(async () => {
+    const [productsRes, stockRes] = await Promise.all([
+      productsApi.getAll().catch(() => ({ products: [] })),
+      stockApi.getGodownStock().catch(() => ({ stock: [] })),
+    ]);
+
+    const godownStockItems = stockRes.stock || [];
+    const mappedProducts: Product[] = (productsRes.products || []).map((p: any) => {
+      const productStockEntries = godownStockItems.filter(
+        (s: any) => s.product_id === p.id
+      );
+      const totalGodownQty = productStockEntries.reduce(
+        (sum: number, s: any) => sum + Number(s.quantity || 0),
+        0
+      );
+
+      const batches = productStockEntries.map((s: any) => ({
+        batchNumber: s.batch_number || 'Default',
+        expiryDate: s.expiry_date ? s.expiry_date.slice(0, 10) : '2026-09-30',
+        quantity: Number(s.quantity || 0),
+      }));
+
+      return {
+        id: p.id,
+        name: p.product_name,
+        sku: p.sku || '',
+        category: p.category || 'General',
+        unit: (p.unit?.toLowerCase() as any) || 'packet',
+        purchasePrice: Number(p.purchase_price || 0),
+        sellingPrice: Number(p.selling_price || 0),
+        godownStock: totalGodownQty,
+        reorderLevel: 50,
+        isActive: p.is_active !== false,
+        batches,
+      };
+    });
+    setProducts(mappedProducts);
+  }, []);
+
   // FETCH ALL DATA FROM REAL BACKEND
   const refreshAllData = useCallback(async () => {
     if (!getToken()) return;
@@ -349,43 +390,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     try {
       // 1. Fetch Products & Godown Stock in parallel
-      const [productsRes, stockRes] = await Promise.all([
-        productsApi.getAll().catch(() => ({ products: [] })),
-        stockApi.getGodownStock().catch(() => ({ stock: [] })),
-      ]);
-
-      const godownStockItems = stockRes.stock || [];
-      const mappedProducts: Product[] = (productsRes.products || []).map((p: any) => {
-        // Compute total quantity and batches for this product
-        const productStockEntries = godownStockItems.filter(
-          (s: any) => s.product_id === p.id
-        );
-        const totalGodownQty = productStockEntries.reduce(
-          (sum: number, s: any) => sum + Number(s.quantity || 0),
-          0
-        );
-
-        const batches = productStockEntries.map((s: any) => ({
-          batchNumber: s.batch_number || 'Default',
-          expiryDate: s.expiry_date ? s.expiry_date.slice(0, 10) : '2026-09-30',
-          quantity: Number(s.quantity || 0),
-        }));
-
-        return {
-          id: p.id,
-          name: p.product_name,
-          sku: p.sku || '',
-          category: p.category || 'General',
-          unit: (p.unit?.toLowerCase() as any) || 'packet',
-          purchasePrice: Number(p.purchase_price || 0),
-          sellingPrice: Number(p.selling_price || 0),
-          godownStock: totalGodownQty,
-          reorderLevel: 50,
-          isActive: p.is_active !== false,
-          batches,
-        };
-      });
-      setProducts(mappedProducts);
+      await refreshProductsAndStock();
 
       // 2. Fetch Shops & Ledgers
       const shopsRes = await shopsApi.getAll().catch(() => ({ shops: [] }));
@@ -731,7 +736,9 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const newTripId = res.trip.id;
 
         showToast('success', 'Trip Created', `Trip created and loaded successfully.`);
-        await refreshAllData();
+        // Only stock levels change here (items moved from godown to van) —
+        // a full refreshAllData() storm is not needed.
+        await refreshProductsAndStock();
 
         // Fetch newly created trip details directly from backend to avoid stale React state
         try {
@@ -763,7 +770,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             unitPrice: Number(st.unit_price || 30),
           }));
 
-          return {
+          const newTrip: Trip = {
             ...tripData,
             id: newTripId,
             tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
@@ -771,13 +778,17 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             shops: tripShops.length > 0 ? tripShops : tripData.shops,
             loadedItems: loadedItems.length > 0 ? loadedItems : tripData.loadedItems,
           };
+          setTrips((prev) => [newTrip, ...prev.filter((t) => t.id !== newTrip.id)]);
+          return newTrip;
         } catch {
-          return {
+          const newTrip: Trip = {
             ...tripData,
             id: newTripId,
             tripNumber: `TRP-${newTripId.slice(0, 8).toUpperCase()}`,
             status: mapBackendTripStatus(res.trip.status || 'loaded'),
           };
+          setTrips((prev) => [newTrip, ...prev.filter((t) => t.id !== newTrip.id)]);
+          return newTrip;
         }
       } catch (err: any) {
         console.error('Create trip error:', err);

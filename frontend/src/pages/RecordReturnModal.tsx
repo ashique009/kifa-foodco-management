@@ -4,6 +4,8 @@ import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { useBakery } from '../context/BakeryContext';
 import { ReturnReason } from '../types';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { formatINR } from '../utils/formatters';
 import { Plus, Minus, RotateCcw } from 'lucide-react';
 
 interface RecordReturnModalProps {
@@ -37,10 +39,7 @@ export const RecordReturnModal: React.FC<RecordReturnModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      idempotencyKeyRef.current =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `return-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      idempotencyKeyRef.current = generateIdempotencyKey('return');
       isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
@@ -52,10 +51,7 @@ export const RecordReturnModal: React.FC<RecordReturnModalProps> = ({
     if (!targetShop || !targetProduct || quantity <= 0) return;
 
     if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `return-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      idempotencyKeyRef.current = generateIdempotencyKey('return');
     }
 
     isSubmittingRef.current = true;

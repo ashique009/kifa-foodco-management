@@ -6,6 +6,8 @@ import { TripStatusBadge } from '../components/ui/Badge';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Modal } from '../components/ui/Modal';
+import { getTripShopProgress } from '../utils/tripProgress';
+import { generateIdempotencyKey } from '../utils/idempotency';
 import {
   ArrowLeft,
   Truck,
@@ -88,11 +90,8 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
     );
   }
 
-  const completedShopsList = trip.shops.filter((s) => s.status === 'completed');
+  const { completedShops, totalShops, allCompleted, completedShopsList } = getTripShopProgress(trip.shops);
   const pendingShopsList = trip.shops.filter((s) => s.status === 'pending');
-  const completedShops = completedShopsList.length;
-  const totalShops = trip.shops.length;
-  const allCompleted = completedShops === totalShops && totalShops > 0;
   const unassignedShops = shops.filter((s) => !trip.shops.some((ts) => ts.shopId === s.id));
 
   // The very next shop to visit
@@ -144,7 +143,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
         product_id: damageProductId,
         quantity: qty,
         notes: damageNotes.trim() || undefined,
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: generateIdempotencyKey('damage'),
       });
       if (success) {
         setIsDamageModalOpen(false);

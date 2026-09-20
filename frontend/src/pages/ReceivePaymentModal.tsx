@@ -3,6 +3,8 @@ import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { useBakery } from '../context/BakeryContext';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { formatINR } from '../utils/formatters';
 import { CheckCircle2, IndianRupee } from 'lucide-react';
 
 interface ReceivePaymentModalProps {
@@ -54,10 +56,7 @@ export const ReceivePaymentModal: React.FC<ReceivePaymentModalProps> = ({
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     try {
-      const idempotencyKey =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `pay-modal-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+      const idempotencyKey = generateIdempotencyKey('pay-modal');
 
       await receivePayment({
         shopId: selectedShopId,

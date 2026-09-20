@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { TripStatusBadge } from '../components/ui/Badge';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { Tabs } from '../components/ui/Tabs';
+import { getTripShopProgress } from '../utils/tripProgress';
 import { Plus, Truck, Calendar, Store, ArrowRight, User } from 'lucide-react';
 import { Trip } from '../types';
 
@@ -62,8 +63,7 @@ export const TripsPage: React.FC<TripsPageProps> = ({ onSelectTrip, onOpenNewTri
       {/* Trip Cards / List */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredTrips.map((trip) => {
-          const completedShops = trip.shops.filter((s) => s.status === 'completed').length;
-          const totalShops = trip.shops.length;
+          const { completedShops, totalShops } = getTripShopProgress(trip.shops);
 
           return (
             <Card

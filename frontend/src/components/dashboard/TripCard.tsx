@@ -4,6 +4,8 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { TripStatusBadge } from '../ui/Badge';
 import { ProgressBar } from '../ui/ProgressBar';
+import { formatMonthDay } from '../../utils/date';
+import { getTripShopProgress } from '../../utils/tripProgress';
 import { Truck, Calendar, Store, ArrowRight, UserCheck } from 'lucide-react';
 
 interface TripCardProps {
@@ -19,18 +21,6 @@ export const TripCard: React.FC<TripCardProps> = ({
   payments,
   onSelectTrip,
 }) => {
-  // Format trip date range or duration (e.g. Sep 15 → Sep 21)
-  const formatMonthDay = (dateStr?: string) => {
-    if (!dateStr) return '';
-    try {
-      const d = new Date(dateStr);
-      if (isNaN(d.getTime())) return dateStr;
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    } catch {
-      return dateStr;
-    }
-  };
-
   const getTripDuration = () => {
     if (trip.startDate && trip.endDate) {
       return `${formatMonthDay(trip.startDate)} → ${formatMonthDay(trip.endDate)}`;
@@ -66,8 +56,7 @@ export const TripCard: React.FC<TripCardProps> = ({
   const tripDue = Math.max(0, tripSales - tripCollection);
 
   // Shop progress
-  const completedShops = trip.shops.filter((s) => s.status === 'completed').length;
-  const totalShops = trip.shops.length;
+  const { completedShops, totalShops } = getTripShopProgress(trip.shops);
   const isCompleted = trip.status === 'Completed';
   const isInProgress = trip.status === 'In Progress';
 

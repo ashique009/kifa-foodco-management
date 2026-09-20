@@ -50,6 +50,10 @@ import {
   setStoredUser,
   AuthUser,
 } from '../api/client';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { toBackendPaymentMethod, toFrontendPaymentMethod } from '../utils/payment';
+import { toIsoDateString, formatTimeShort } from '../utils/date';
+import { formatINR } from '../utils/formatters';
 
 export interface ToastNotification {
   id: string;
@@ -603,10 +607,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       setSales(mappedSales);
 
       const mappedPayments: Payment[] = (paymentsRes.payments || []).map((p: any) => {
-        let method: Payment['method'] = 'Cash';
-        if (p.payment_method === 'upi') method = 'UPI';
-        else if (p.payment_method === 'card') method = 'Card';
-        else if (p.payment_method === 'bank_transfer') method = 'Bank Transfer';
+        const method = toFrontendPaymentMethod(p.payment_method);
 
         const recNum = p.receipt_number || `REC-${p.id.slice(0, 8).toUpperCase()}`;
 
@@ -898,7 +899,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           const payMethod =
             saleData.paymentMethod === 'Partial'
               ? 'cash'
-              : (saleData.paymentMethod.toLowerCase().replace(' ', '_') as any);
+              : toBackendPaymentMethod(saleData.paymentMethod);
 
           await paymentsApi.create({
             shop_id: saleData.shopId,
@@ -927,13 +928,8 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   ): Promise<Payment | null> => {
     return withGlobalLoading(async () => {
       try {
-        const backendMethod = paymentData.method.toLowerCase().replace(' ', '_') as any;
-
-        const idempotencyKey =
-          paymentData.idempotencyKey ||
-          (typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `pay-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`);
+        const backendMethod = toBackendPaymentMethod(paymentData.method);
+        const idempotencyKey = paymentData.idempotencyKey || generateIdempotencyKey('pay');
 
         const res = await paymentsApi.create({
           shop_id: paymentData.shopId,
@@ -946,9 +942,9 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         });
 
         if (res.is_duplicate) {
-          showToast('info', 'Payment Already Processed', `Payment of ₹${paymentData.amount.toLocaleString('en-IN')} was already recorded.`);
+          showToast('info', 'Payment Already Processed', `Payment of ${formatINR(paymentData.amount)} was already recorded.`);
         } else {
-          showToast('success', 'Payment Received', `Collected ₹${paymentData.amount.toLocaleString('en-IN')}.`);
+          showToast('success', 'Payment Received', `Collected ${formatINR(paymentData.amount)}.`);
         }
         await refreshAllData();
         return null;
@@ -1455,7 +1451,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const addExpense = (expData: Omit<Expense, 'id' | 'date'>) => {
     const id = `exp-${Date.now()}`;
     setExpenses((prev) => [{ ...expData, id, date: todayDateStr }, ...prev]);
-    showToast('success', 'Expense Recorded', `₹${expData.amount.toLocaleString('en-IN')} for ${expData.category}.`);
+    showToast('success', 'Expense Recorded', `${formatINR(expData.amount)} for ${expData.category}.`);
   };
 
   // 13. Shop Ledger

@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Plus, Trash2, ArrowLeft, Check, Store } from 'lucide-react';
 import { TripLoadedItem, TripShop } from '../types';
+import { getTodayIsoString } from '../utils/date';
 
 interface CreateTripPageProps {
   onBack: () => void;
@@ -15,7 +16,7 @@ export const CreateTripPage: React.FC<CreateTripPageProps> = ({ onBack, onTripCr
   const { vehicles, staff, products, shops, createTrip, showToast } = useBakery();
 
   // Form states
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(() => getTodayIsoString());
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [selectedDriverId, setSelectedDriverId] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState('');

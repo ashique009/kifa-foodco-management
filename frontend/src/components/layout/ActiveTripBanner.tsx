@@ -1,6 +1,7 @@
 import React from 'react';
 import { Truck, ArrowRight } from 'lucide-react';
 import { useBakery } from '../../context/BakeryContext';
+import { getTripShopProgress } from '../../utils/tripProgress';
 
 export interface ActiveTripBannerProps {
   onNavigateToTrip: (tripId: string) => void;
@@ -12,8 +13,7 @@ export const ActiveTripBanner: React.FC<ActiveTripBannerProps> = ({ onNavigateTo
 
   if (!activeTrip) return null;
 
-  const completedShops = activeTrip.shops.filter((s) => s.status === 'completed').length;
-  const totalShops = activeTrip.shops.length;
+  const { completedShops, totalShops } = getTripShopProgress(activeTrip.shops);
 
   return (
     <div className="bg-[#172554] text-white px-4 py-2.5 shadow-sm border-b border-blue-900/40">

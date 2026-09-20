@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { RecordSaleModal } from './RecordSaleModal';
 import { ReceivePaymentModal } from './ReceivePaymentModal';
 import { RecordReturnModal } from './RecordReturnModal';
+import { getTodayIsoString } from '../utils/date';
 import {
   ArrowLeft,
   Phone,
@@ -74,7 +75,7 @@ export const ShopVisitPage: React.FC<ShopVisitPageProps> = ({
   const shopReturns = returns.filter((r) => r.shopId === shop.id);
 
   // Check if today's visit has completed work
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getTodayIsoString();
   const hasCompletedWork =
     shopSales.some((s) => s.tripId === tripId || s.date === todayStr) ||
     shopPayments.some((p) => p.tripId === tripId || p.date === todayStr) ||

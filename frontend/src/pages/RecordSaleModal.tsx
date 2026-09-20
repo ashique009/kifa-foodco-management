@@ -4,6 +4,8 @@ import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { useBakery } from '../context/BakeryContext';
 import { Product, PaymentMethod, SaleItem } from '../types';
+import { generateIdempotencyKey } from '../utils/idempotency';
+import { formatINR } from '../utils/formatters';
 import { Plus, Minus, Trash2, Store, ArrowRight, ArrowLeft, Check, Package } from 'lucide-react';
 
 interface RecordSaleModalProps {
@@ -83,10 +85,7 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
   // Reset or initialize items and generate fresh idempotency key when modal opens
   useEffect(() => {
     if (isOpen) {
-      idempotencyKeyRef.current =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `sale-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      idempotencyKeyRef.current = generateIdempotencyKey('sale');
       isSubmittingRef.current = false;
       setIsSubmitting(false);
       setMobileStep(1);
@@ -231,10 +230,7 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
 
     // Ensure we have a valid idempotency key
     if (!idempotencyKeyRef.current) {
-      idempotencyKeyRef.current =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `sale-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+      idempotencyKeyRef.current = generateIdempotencyKey('sale');
     }
 
     isSubmittingRef.current = true;

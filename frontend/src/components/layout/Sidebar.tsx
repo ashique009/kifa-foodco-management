@@ -50,8 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile,
 }) => {
-  const { currentUser } = useBakery();
-  const isAdmin = currentUser.userRole === 'admin';
+  const { currentUser, canManage } = useBakery();
   const [isMoreExpanded, setIsMoreExpanded] = useState(false);
 
   const mainNav = [
@@ -146,8 +145,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
 
-          {/* More Section Accordion (ADMIN only) */}
-          {isAdmin && (
+          {/* More Section Accordion (Manager / Admin) */}
+          {canManage && (
             <div className="pt-2">
               <button
                 onClick={() => setIsMoreExpanded(!isMoreExpanded)}

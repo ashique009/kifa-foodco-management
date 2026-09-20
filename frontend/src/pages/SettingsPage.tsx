@@ -7,8 +7,7 @@ import { Tabs } from '../components/ui/Tabs';
 import { Shield, Lock, AlertCircle, Save, CheckCircle2 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
-  const { currentUser, businessSettings, updateBusinessProfile, updateInvoiceSettings } = useBakery();
-  const isAdmin = currentUser.userRole === 'admin';
+  const { currentUser, canManage, businessSettings, updateBusinessProfile, updateInvoiceSettings } = useBakery();
 
   const [activeTab, setActiveTab] = useState('business');
 
@@ -74,17 +73,17 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  // If user is not an admin, display a clean security notice
-  if (!isAdmin) {
+  // If user does not have management access, display a clean security notice
+  if (!canManage) {
     return (
       <div className="max-w-2xl mx-auto py-12 px-4 text-center space-y-4">
         <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center mx-auto text-amber-600">
           <Lock className="w-7 h-7" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">Admin Access Required</h2>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">Management Access Required</h2>
           <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
-            Business settings, invoice numbering, tax details and roles can only be configured by business administrators.
+            Business settings, invoice numbering, tax details and roles can only be configured by business administrators and managers.
           </p>
         </div>
         <div className="pt-2">
@@ -281,16 +280,38 @@ export const SettingsPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="font-bold text-slate-900 text-sm">Business Owner / Admin</span>
                   <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[10px] border border-emerald-200">
-                    Full System Authority
+                    Master System Authority
                   </span>
                 </div>
                 <p className="text-slate-500 text-xs leading-relaxed">
-                  Unrestricted access to company-wide financial metrics, trip dispatching, product catalogue & pricing, staff credentials, and enterprise settings.
+                  Unrestricted system-level authority: company financials, fleet dispatches, product pricing, staff credentials, enterprise settings, and system-level administrative protections.
                 </p>
                 <div className="pt-2 flex flex-wrap gap-1.5">
-                  {['Company-Wide Reports', 'Fleet & Trips', 'Stock Management', 'Pricing & SKUs', 'Staff Accounts', 'Business Settings'].map((p) => (
+                  {['Master Admin Account', 'Company-Wide Reports', 'Fleet & Trips', 'Stock Management', 'Pricing & SKUs', 'Staff Accounts', 'Business Settings'].map((p) => (
                     <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 font-medium">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      {p}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/70 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">Manager (Business Operations)</span>
+                  <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded text-[10px] border border-amber-200">
+                    Full Business Authority
+                  </span>
+                </div>
+                <p className="text-slate-500 text-xs leading-relaxed">
+                  Full operational management: trip dispatches, product catalogue &amp; batches, supplier purchases, fleet vehicles, retail shops, sales &amp; collection ledgers, staff management, and business settings. Cannot modify Master Admin credentials.
+                </p>
+                <div className="pt-2 flex flex-wrap gap-1.5">
+                  {['Company-Wide Overview', 'Dispatch & Trips', 'Stock & Batches', 'Purchases & Suppliers', 'Fleet Management', 'Staff Management', 'Business Settings'].map((p) => (
+                    <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[11px] text-slate-700 font-medium">
+                      <CheckCircle2 className="w-3 h-3 text-amber-600" />
                       {p}
                     </span>
                   ))}

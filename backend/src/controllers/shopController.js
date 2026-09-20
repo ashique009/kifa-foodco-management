@@ -1,4 +1,5 @@
 const pool = require("../config/database");
+const { hasBusinessAccess } = require("../middleware/authorize");
 
 // CREATE SHOP
 const createShop = async (req, res) => {
@@ -134,8 +135,8 @@ const getShopLedger = async (req, res) => {
       });
     }
 
-    // Role-based access check: If user is STAFF (not admin), verify that this shop is assigned to one of their trips
-    if (req.user && req.user.role !== "admin") {
+    // Role-based access check: If user is restricted staff (Driver / Sales Staff), verify that this shop is assigned to one of their trips
+    if (req.user && !hasBusinessAccess(req.user)) {
       const staffCheck = await pool.query(
         `SELECT id FROM staff WHERE user_id = $1 LIMIT 1`,
         [req.user.userId]

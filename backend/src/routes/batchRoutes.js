@@ -7,7 +7,7 @@ const {
 } = require("../controllers/batchController");
 
 const authenticateToken = require("../middleware/auth");
-const { requireAdmin } = require("../middleware/authorize");
+const { requireManagerOrAdmin } = require("../middleware/authorize");
 const { validateUuidParam } = require("../middleware/validateUuid");
 
 const router = express.Router();
@@ -15,8 +15,8 @@ const router = express.Router();
 // All batch routes require login
 router.use(authenticateToken);
 
-// Create a batch (ADMIN only)
-router.post("/", requireAdmin, createBatch);
+// Create a batch (Manager / Admin)
+router.post("/", requireManagerOrAdmin, createBatch);
 
 // Get all batches
 router.get("/", getBatches);

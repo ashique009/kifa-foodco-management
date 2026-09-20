@@ -5,7 +5,7 @@ const {
   updateInvoiceSettings,
 } = require("../controllers/settingsController");
 const authenticateToken = require("../middleware/auth");
-const { requireAdmin } = require("../middleware/authorize");
+const { requireManagerOrAdmin } = require("../middleware/authorize");
 
 const router = express.Router();
 
@@ -14,10 +14,10 @@ router.use(authenticateToken);
 // Read settings (authenticated users)
 router.get("/", getSettings);
 
-// Update business profile (admin only)
-router.put("/business", requireAdmin, updateBusinessProfile);
+// Update business profile (Manager / Admin)
+router.put("/business", requireManagerOrAdmin, updateBusinessProfile);
 
-// Update invoice & receipt preferences (admin only)
-router.put("/invoice", requireAdmin, updateInvoiceSettings);
+// Update invoice & receipt preferences (Manager / Admin)
+router.put("/invoice", requireManagerOrAdmin, updateInvoiceSettings);
 
 module.exports = router;

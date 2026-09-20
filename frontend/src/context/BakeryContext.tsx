@@ -70,7 +70,19 @@ interface BakeryContextType {
   globalLoadingMessage?: string;
   globalLoadingSubMessage?: string;
   setGlobalLoading: (isLoading: boolean, message?: string) => void;
-  currentUser: { id?: string; username?: string; name: string; role: string; userRole: 'admin' | 'staff' };
+  currentUser: {
+    id?: string;
+    username?: string;
+    name: string;
+    role: string;
+    userRole: 'admin' | 'manager' | 'driver' | 'sales_staff';
+    isAdmin: boolean;
+    isManager: boolean;
+    canManage: boolean;
+  };
+  isAdmin: boolean;
+  isManager: boolean;
+  canManage: boolean;
   login: (user: any) => void;
   logout: () => void;
   refreshAllData: () => Promise<void>;
@@ -179,25 +191,65 @@ const BakeryContext = createContext<BakeryContextType | undefined>(undefined);
 export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   // Auth state
   const [token, setTokenState] = useState<string | null>(() => getToken());
+
+  // Helper to normalize and compute role flags
+  const resolveUserPermissions = (rawRole?: string) => {
+    const r = (rawRole || 'admin').toLowerCase().trim().replace(/\s+/g, '_');
+    const isAdmin = r === 'admin';
+    const isManager = r === 'manager';
+    const isDriver = r === 'driver';
+    const isSalesStaff = r === 'sales_staff';
+    const canManage = isAdmin || isManager;
+    const userRole: 'admin' | 'manager' | 'driver' | 'sales_staff' =
+      isAdmin ? 'admin' : isManager ? 'manager' : isDriver ? 'driver' : 'sales_staff';
+    
+    let displayRole = 'Sales Staff';
+    if (isAdmin) displayRole = 'Admin';
+    else if (isManager) displayRole = 'Manager';
+    else if (isDriver) displayRole = 'Driver';
+
+    return {
+      userRole,
+      isAdmin,
+      isManager,
+      canManage,
+      displayRole,
+    };
+  };
+
   const [currentUser, setCurrentUserState] = useState<{
     id?: string;
     username?: string;
     name: string;
     role: string;
-    userRole: 'admin' | 'staff';
+    userRole: 'admin' | 'manager' | 'driver' | 'sales_staff';
+    isAdmin: boolean;
+    isManager: boolean;
+    canManage: boolean;
   }>(() => {
     const stored = getStoredUser();
     if (stored) {
-      const isAdmin = stored.role === 'admin';
+      const perms = resolveUserPermissions(stored.role);
       return {
         id: stored.id,
         username: stored.username,
         name: stored.name || stored.username,
-        role: isAdmin ? 'Business Owner / Admin' : stored.role,
-        userRole: isAdmin ? 'admin' : 'staff',
+        role: perms.displayRole,
+        userRole: perms.userRole,
+        isAdmin: perms.isAdmin,
+        isManager: perms.isManager,
+        canManage: perms.canManage,
       };
     }
-    return { name: 'Admin', role: 'Business Owner / Admin', userRole: 'admin' };
+    const defaultPerms = resolveUserPermissions('admin');
+    return {
+      name: 'Admin',
+      role: 'Admin',
+      userRole: defaultPerms.userRole,
+      isAdmin: defaultPerms.isAdmin,
+      isManager: defaultPerms.isManager,
+      canManage: defaultPerms.canManage,
+    };
   });
 
   const isAuthenticated = Boolean(token);
@@ -295,13 +347,16 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const login = (user: AuthUser) => {
     const activeToken = getToken();
     setTokenState(activeToken);
-    const isAdmin = user.role === 'admin';
+    const perms = resolveUserPermissions(user.role);
     setCurrentUserState({
       id: user.id,
       username: user.username,
       name: user.name || user.username,
-      role: isAdmin ? 'Business Owner / Admin' : user.role,
-      userRole: isAdmin ? 'admin' : 'staff',
+      role: perms.displayRole,
+      userRole: perms.userRole,
+      isAdmin: perms.isAdmin,
+      isManager: perms.isManager,
+      canManage: perms.canManage,
     });
     showToast('success', 'Welcome Back', `Logged in as ${user.username}`);
   };
@@ -1565,6 +1620,9 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         globalLoadingSubMessage,
         setGlobalLoading,
         currentUser,
+        isAdmin: currentUser.isAdmin,
+        isManager: currentUser.isManager,
+        canManage: currentUser.canManage,
         login,
         logout,
         refreshAllData,

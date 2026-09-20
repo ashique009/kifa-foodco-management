@@ -6,15 +6,15 @@ const {
 } = require("../controllers/purchaseController");
 
 const authenticateToken = require("../middleware/auth");
-const { requireAdmin } = require("../middleware/authorize");
+const { requireManagerOrAdmin } = require("../middleware/authorize");
 
 const router = express.Router();
 
-// All purchase routes require login and ADMIN privileges
+// All purchase routes require login and Manager/Admin privileges
 router.use(authenticateToken);
-router.use(requireAdmin);
+router.use(requireManagerOrAdmin);
 
-// Purchases (ADMIN only)
+// Purchases (Manager / Admin)
 router.get("/", getPurchases);
 router.post("/", createPurchase);
 

@@ -1,6 +1,10 @@
 const pool = require("../config/database");
 const crypto = require("crypto");
-const { verifyTripAccess, getStaffIdForUser } = require("../middleware/authorize");
+const {
+  hasBusinessAccess,
+  verifyTripAccess,
+  getStaffIdForUser,
+} = require("../middleware/authorize");
 
 // CREATE TRIP
 const createTrip = async (req, res) => {
@@ -352,8 +356,8 @@ const getTrips = async (req, res) => {
     `;
     const params = [];
 
-    // If caller is STAFF, only return trips where they are driver or sales_staff
-    if (req.user && req.user.role !== "admin") {
+    // If caller is restricted staff (Driver / Sales Staff), only return trips where they are driver or sales_staff
+    if (req.user && !hasBusinessAccess(req.user)) {
       const staffId = await getStaffIdForUser(pool, req.user.userId);
       if (!staffId) {
         return res.json({ trips: [] });

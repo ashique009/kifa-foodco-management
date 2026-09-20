@@ -7,6 +7,7 @@ import { QuickSearchModal } from './QuickSearchModal';
 import { ToastContainer } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
 import { Plus, ShoppingCart, IndianRupee, Truck, RotateCcw } from 'lucide-react';
+import { useBakery } from '../../context/BakeryContext';
 
 interface AppLayoutProps {
   currentPage: NavigationPage;
@@ -29,6 +30,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onOpenNewTrip,
   children,
 }) => {
+  const { canManage } = useBakery();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isQuickActionModalOpen, setIsQuickActionModalOpen] = useState(false);
@@ -122,21 +124,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             </div>
           </button>
 
-          <button
-            onClick={() => {
-              setIsQuickActionModalOpen(false);
-              onOpenNewTrip();
-            }}
-            className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 hover:bg-amber-50 border border-slate-200 transition-colors text-left"
-          >
-            <div className="p-2 bg-[#F59E0B] text-slate-950 rounded-lg">
-              <Truck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="block text-xs font-bold text-slate-900">Create New Trip</span>
-              <span className="block text-[11px] text-slate-500">Dispatch vehicle and load stock</span>
-            </div>
-          </button>
+          {canManage && (
+            <button
+              onClick={() => {
+                setIsQuickActionModalOpen(false);
+                onOpenNewTrip();
+              }}
+              className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-slate-50 hover:bg-amber-50 border border-slate-200 transition-colors text-left"
+            >
+              <div className="p-2 bg-[#F59E0B] text-slate-950 rounded-lg">
+                <Truck className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="block text-xs font-bold text-slate-900">Create New Trip</span>
+                <span className="block text-[11px] text-slate-500">Dispatch vehicle and load stock</span>
+              </div>
+            </button>
+          )}
         </div>
       </Modal>
     </div>

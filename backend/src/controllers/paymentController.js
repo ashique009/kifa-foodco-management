@@ -1,5 +1,9 @@
 const pool = require("../config/database");
-const { getStaffIdForUser } = require("../middleware/authorize");
+const {
+  hasBusinessAccess,
+  verifyTripAccess,
+  getStaffIdForUser,
+} = require("../middleware/authorize");
 
 // CREATE PAYMENT
 const createPayment = async (req, res) => {
@@ -48,8 +52,8 @@ const createPayment = async (req, res) => {
       req.body.idempotency_key ||
       null;
 
-    // Role check: If STAFF, check that shop belongs to at least one assigned trip
-    if (req.user && req.user.role !== "admin") {
+    // Role check: If restricted staff (Driver / Sales Staff), check that shop belongs to at least one assigned trip
+    if (req.user && !hasBusinessAccess(req.user)) {
       const staffId = await getStaffIdForUser(pool, req.user.userId);
       if (!staffId) {
         return res.status(403).json({
@@ -341,8 +345,8 @@ const getPayments = async (req, res) => {
     `;
     const params = [];
 
-    // If caller is STAFF, only return payments for shops assigned to their trips
-    if (req.user && req.user.role !== "admin") {
+    // If caller is restricted staff (Driver / Sales Staff), only return payments for shops assigned to their trips
+    if (req.user && !hasBusinessAccess(req.user)) {
       const staffId = await getStaffIdForUser(pool, req.user.userId);
       if (!staffId) {
         return res.json({ payments: [] });

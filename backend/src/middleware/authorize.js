@@ -1,10 +1,26 @@
 const pool = require("../config/database");
 
-// Require ADMIN role middleware
+// Centralized business-access helper
+// Returns true when user has admin or manager role
+const hasBusinessAccess = (user) => {
+  return Boolean(user && (user.role === "admin" || user.role === "manager"));
+};
+
+// Require ADMIN role middleware (strictly admin-only)
 const requireAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({
       message: "Admin access required",
+    });
+  }
+  next();
+};
+
+// Require MANAGER or ADMIN role middleware for business / operations
+const requireManagerOrAdmin = (req, res, next) => {
+  if (!hasBusinessAccess(req.user)) {
+    return res.status(403).json({
+      message: "Manager or Admin access required",
     });
   }
   next();
@@ -49,15 +65,15 @@ const verifyTripAccess = async (tripId, req, dbClientOrPool) => {
 
   const trip = tripRes.rows[0];
 
-  // 2. ADMIN has full access to all trips
-  if (req.user && req.user.role === "admin") {
+  // 2. ADMIN and MANAGER have full access to all trips
+  if (hasBusinessAccess(req.user)) {
     return {
       authorized: true,
       trip,
     };
   }
 
-  // 3. STAFF must be assigned as driver or sales_staff
+  // 3. STAFF (Driver / Sales Staff) must be assigned as driver or sales_staff
   const staffId = await getStaffIdForUser(db, req.user?.userId);
 
   if (!staffId) {
@@ -84,7 +100,9 @@ const verifyTripAccess = async (tripId, req, dbClientOrPool) => {
 };
 
 module.exports = {
+  hasBusinessAccess,
   requireAdmin,
+  requireManagerOrAdmin,
   getStaffIdForUser,
   verifyTripAccess,
 };

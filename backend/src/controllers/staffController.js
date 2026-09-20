@@ -1,12 +1,13 @@
 const bcrypt = require("bcrypt");
 const pool = require("../config/database");
+const { hasBusinessAccess } = require("../middleware/authorize");
 
-// CREATE USER / STAFF (ADMIN only)
+// CREATE USER / STAFF (ADMIN / MANAGER)
 const createStaff = async (req, res) => {
-  // Enforce backend authorization: Only ADMIN can create staff
-  if (!req.user || req.user.role !== "admin") {
+  // Enforce backend authorization: Only ADMIN and MANAGER can create staff
+  if (!hasBusinessAccess(req.user)) {
     return res.status(403).json({
-      message: "Admin access required to create staff members",
+      message: "Manager or Admin access required to create staff members",
     });
   }
 
@@ -224,7 +225,7 @@ const deleteStaff = async (req, res) => {
 
     if (staffResult.rows.length === 0) {
       // Check if it's a standalone user
-      const userOnly = await client.query(`SELECT id, username FROM users WHERE id = $1`, [id]);
+      const userOnly = await client.query(`SELECT id, username, role FROM users WHERE id = $1`, [id]);
       if (userOnly.rows.length === 0) {
         await client.query("ROLLBACK");
         return res.status(404).json({
@@ -236,6 +237,14 @@ const deleteStaff = async (req, res) => {
         await client.query("ROLLBACK");
         return res.status(400).json({
           message: "Cannot deactivate your own account",
+        });
+      }
+
+      // Preserve Admin protection: Manager cannot delete or deactivate an Admin account
+      if (userOnly.rows[0].role === "admin" && req.user?.role !== "admin") {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Manager accounts cannot modify or deactivate an Admin account",
         });
       }
 
@@ -258,6 +267,20 @@ const deleteStaff = async (req, res) => {
       return res.status(400).json({
         message: "Cannot deactivate your own account",
       });
+    }
+
+    // Preserve Admin protection: Check linked user role
+    if (staffMember.user_id) {
+      const linkedUser = await client.query(
+        `SELECT role FROM users WHERE id = $1`,
+        [staffMember.user_id]
+      );
+      if (linkedUser.rows.length > 0 && linkedUser.rows[0].role === "admin" && req.user?.role !== "admin") {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Manager accounts cannot modify or deactivate an Admin account",
+        });
+      }
     }
 
     // Deactivate linked user if present

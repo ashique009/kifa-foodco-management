@@ -15,14 +15,14 @@ const {
 } = require("../controllers/tripController");
 
 const authenticateToken = require("../middleware/auth");
-const { requireAdmin } = require("../middleware/authorize");
+const { requireManagerOrAdmin } = require("../middleware/authorize");
 const { validateUuidParam } = require("../middleware/validateUuid");
 
 const router = express.Router();
 
 router.use(authenticateToken);
 
-router.post("/", requireAdmin, createTrip);
+router.post("/", requireManagerOrAdmin, createTrip);
 router.get("/", getTrips);
 router.post("/:tripId/load", validateUuidParam("tripId"), loadStock);
 router.post("/:tripId/start", validateUuidParam("tripId"), startTrip);

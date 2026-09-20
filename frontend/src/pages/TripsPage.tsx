@@ -15,7 +15,7 @@ interface TripsPageProps {
 }
 
 export const TripsPage: React.FC<TripsPageProps> = ({ onSelectTrip, onOpenNewTrip }) => {
-  const { trips } = useBakery();
+  const { trips, canManage } = useBakery();
   const [activeTab, setActiveTab] = useState<string>('trips');
 
   const filterTabs = [
@@ -47,14 +47,16 @@ export const TripsPage: React.FC<TripsPageProps> = ({ onSelectTrip, onOpenNewTri
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          size="md"
-          leftIcon={<Plus className="w-4 h-4" />}
-          onClick={onOpenNewTrip}
-        >
-          + New Trip
-        </Button>
+        {canManage && (
+          <Button
+            variant="primary"
+            size="md"
+            leftIcon={<Plus className="w-4 h-4" />}
+            onClick={onOpenNewTrip}
+          >
+            + New Trip
+          </Button>
+        )}
       </div>
 
       {/* Filter Tabs */}

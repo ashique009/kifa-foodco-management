@@ -16,9 +16,9 @@ export const StaffPage: React.FC = () => {
     deleteStaff,
     isStaffInUse,
     currentUser,
+    isAdmin,
+    canManage,
   } = useBakery();
-
-  const isAdmin = currentUser?.userRole === 'admin';
 
   const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
@@ -185,7 +185,7 @@ export const StaffPage: React.FC = () => {
           </p>
         </div>
 
-        {isAdmin && (
+        {canManage && (
           <Button
             variant="primary"
             size="md"
@@ -228,8 +228,8 @@ export const StaffPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Three-dot (⋮) menu - ADMIN only */}
-                {isAdmin && (
+                {/* Three-dot (⋮) menu - Manager or Admin (Admin accounts protected from Manager) */}
+                {canManage && (isAdmin || member.role !== 'Admin') && (
                   <div className="relative">
                     <button
                       type="button"

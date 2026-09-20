@@ -1,4 +1,5 @@
 const pool = require("../config/database");
+const { hasBusinessAccess } = require("../middleware/authorize");
 
 // GET /api/settings
 // Accessible by authenticated users (both admin and staff) so business profile
@@ -47,12 +48,12 @@ const getSettings = async (req, res) => {
 };
 
 // PUT /api/settings/business
-// ADMIN ONLY: Update business profile details
+// ADMIN / MANAGER: Update business profile details
 const updateBusinessProfile = async (req, res) => {
   try {
-    if (!req.user || req.user.role !== "admin") {
+    if (!hasBusinessAccess(req.user)) {
       return res.status(403).json({
-        message: "Admin access required to modify business profile",
+        message: "Manager or Admin access required to modify business profile",
       });
     }
 
@@ -144,12 +145,12 @@ const updateBusinessProfile = async (req, res) => {
 };
 
 // PUT /api/settings/invoice
-// ADMIN ONLY: Update invoice prefix, receipt prefix, and footer notes
+// ADMIN / MANAGER: Update invoice prefix, receipt prefix, and footer notes
 const updateInvoiceSettings = async (req, res) => {
   try {
-    if (!req.user || req.user.role !== "admin") {
+    if (!hasBusinessAccess(req.user)) {
       return res.status(403).json({
-        message: "Admin access required to modify invoice configuration",
+        message: "Manager or Admin access required to modify invoice configuration",
       });
     }
 

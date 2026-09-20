@@ -29,6 +29,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
 }) => {
   const {
     currentUser,
+    canManage,
     todaySalesTotal,
     todayCollectionTotal,
     totalOutstanding,
@@ -52,24 +53,22 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       ? 'Good Afternoon'
       : 'Good Evening';
 
-  const isAdmin = currentUser.userRole === 'admin';
-
   // Subtitles scoped according to role
-  const collectionSubtitle = isAdmin
+  const collectionSubtitle = canManage
     ? "Payments received today across all trips"
     : "Collected today from your assigned trips";
 
-  const salesSubtitle = isAdmin
+  const salesSubtitle = canManage
     ? "Total sales recorded today across trips"
     : "Sales recorded from your assigned trips";
 
-  const outstandingSubtitle = isAdmin
+  const outstandingSubtitle = canManage
     ? "Current total due from all shops"
     : activeTrips.length > 0
     ? "Due from your assigned shops"
     : "No shops currently assigned";
 
-  const activeTripsSubtitle = isAdmin
+  const activeTripsSubtitle = canManage
     ? `${activeTrips.length} vehicles currently on route`
     : activeTrips.length > 0
     ? `${activeTrips.length} of your assigned trips active`
@@ -84,7 +83,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             {greeting}, {currentUser.name}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            {isAdmin
+            {canManage
               ? 'Kifa Food Co. wholesale operations, dispatches & collection overview.'
               : 'Your assigned delivery routes, dispatches & sales overview.'}
           </p>
@@ -99,7 +98,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           >
             Record Sale
           </Button>
-          {isAdmin && (
+          {canManage && (
             <Button
               variant="accent"
               size="sm"
@@ -171,7 +170,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <h2 className="text-base font-bold text-slate-900 tracking-tight">
-              {isAdmin ? 'CURRENT TRIPS' : 'YOUR ACTIVE TRIPS'}
+              {canManage ? 'CURRENT TRIPS' : 'YOUR ACTIVE TRIPS'}
             </h2>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800">
               {activeTrips.length} Active
@@ -182,7 +181,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             onClick={() => onNavigate('trips')}
             className="text-xs font-semibold text-[#172554] hover:underline flex items-center gap-1 transition-colors"
           >
-            {isAdmin ? 'View All Trips' : 'View All Assigned Trips'} <ArrowRight className="w-3.5 h-3.5" />
+            {canManage ? 'View All Trips' : 'View All Assigned Trips'} <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
@@ -198,7 +197,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               />
             ))}
           </div>
-        ) : !isAdmin ? (
+        ) : !canManage ? (
           <div className="bg-white rounded-xl border border-dashed border-slate-300 p-8 text-center space-y-3">
             <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mx-auto text-slate-400">
               <Truck className="w-6 h-6" />

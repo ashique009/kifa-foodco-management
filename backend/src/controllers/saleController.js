@@ -1,6 +1,10 @@
 const crypto = require("crypto");
 const pool = require("../config/database");
-const { verifyTripAccess, getStaffIdForUser } = require("../middleware/authorize");
+const {
+  hasBusinessAccess,
+  verifyTripAccess,
+  getStaffIdForUser,
+} = require("../middleware/authorize");
 
 // Helper to retrieve an existing sale with all items for idempotency
 const getExistingSaleWithItems = async (dbClientOrPool, idempotencyKey) => {
@@ -593,8 +597,8 @@ const getSales = async (req, res) => {
     `;
     const params = [];
 
-    // If caller is STAFF, only return sales for trips assigned to them
-    if (req.user && req.user.role !== "admin") {
+    // If caller is restricted staff (Driver / Sales Staff), only return sales for trips assigned to them
+    if (req.user && !hasBusinessAccess(req.user)) {
       const staffId = await getStaffIdForUser(pool, req.user.userId);
       if (!staffId) {
         return res.json({ sales: [] });

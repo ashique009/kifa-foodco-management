@@ -67,88 +67,174 @@ const createStaff = async (req, res) => {
     await client.query("BEGIN");
 
     // 3. Check for existing username (case-insensitive) inside transaction
-    const existingUser = await client.query(
-      `SELECT id FROM users WHERE LOWER(username) = $1`,
+    const existingUserRes = await client.query(
+      `SELECT id, username, role, is_active FROM users WHERE LOWER(username) = $1`,
       [cleanUsername]
     );
-
-    if (existingUser.rows.length > 0) {
-      await client.query("ROLLBACK");
-      return res.status(409).json({
-        message: "Username already exists",
-      });
-    }
 
     // 4. Hash password with bcrypt (10 rounds standard)
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    // 5. Create user in users table
-    const userResult = await client.query(
-      `
-      INSERT INTO users (
-        username,
-        password_hash,
-        role,
-        is_active
-      )
-      VALUES ($1, $2, $3, TRUE)
-      RETURNING id, username, role, is_active, created_at, updated_at
-      `,
-      [
-        cleanUsername,
-        passwordHash,
-        staffRole,
-      ]
-    );
+    let targetUser = null;
+    let targetStaff = null;
+    let isReactivation = false;
 
-    const newUser = userResult.rows[0];
+    if (existingUserRes.rows.length > 0) {
+      const existingUser = existingUserRes.rows[0];
 
-    // 6. Create corresponding staff record linked by user_id
-    const staffResult = await client.query(
-      `
-      INSERT INTO staff (
-        name,
-        phone,
-        user_id,
-        is_available
-      )
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, name, phone, user_id, is_available, created_at, updated_at
-      `,
-      [
-        cleanName,
-        cleanPhone,
-        newUser.id,
-        Boolean(is_available),
-      ]
-    );
+      // CASE 1: Existing user is ACTIVE -> 409 Conflict
+      if (existingUser.is_active) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          message: "Username already exists",
+        });
+      }
 
-    const newStaff = staffResult.rows[0];
+      // SECURITY: Existing Admin accounts cannot be reactivated or hijacked via staff creation
+      if (existingUser.role === "admin") {
+        await client.query("ROLLBACK");
+        return res.status(403).json({
+          message: "Admin accounts cannot be managed or reactivated via staff creation",
+        });
+      }
+
+      // CASE 2: Existing user is INACTIVE -> Reactivate existing user
+      isReactivation = true;
+
+      const updatedUserRes = await client.query(
+        `
+        UPDATE users
+        SET password_hash = $1,
+            role = $2,
+            is_active = TRUE,
+            updated_at = NOW()
+        WHERE id = $3
+        RETURNING id, username, role, is_active, created_at, updated_at
+        `,
+        [
+          passwordHash,
+          staffRole,
+          existingUser.id,
+        ]
+      );
+      targetUser = updatedUserRes.rows[0];
+
+      // Check if there is an existing linked staff record
+      const existingStaffRes = await client.query(
+        `SELECT id FROM staff WHERE user_id = $1 LIMIT 1`,
+        [targetUser.id]
+      );
+
+      if (existingStaffRes.rows.length > 0) {
+        // Reactivate and update existing staff record
+        const updatedStaffRes = await client.query(
+          `
+          UPDATE staff
+          SET name = $1,
+              phone = $2,
+              is_available = $3,
+              updated_at = NOW()
+          WHERE id = $4
+          RETURNING id, name, phone, user_id, is_available, created_at, updated_at
+          `,
+          [
+            cleanName,
+            cleanPhone,
+            Boolean(is_available),
+            existingStaffRes.rows[0].id,
+          ]
+        );
+        targetStaff = updatedStaffRes.rows[0];
+      } else {
+        // Orphaned inactive user: create the missing linked staff record
+        const newStaffRes = await client.query(
+          `
+          INSERT INTO staff (
+            name,
+            phone,
+            user_id,
+            is_available
+          )
+          VALUES ($1, $2, $3, $4)
+          RETURNING id, name, phone, user_id, is_available, created_at, updated_at
+          `,
+          [
+            cleanName,
+            cleanPhone,
+            targetUser.id,
+            Boolean(is_available),
+          ]
+        );
+        targetStaff = newStaffRes.rows[0];
+      }
+    } else {
+      // 5. Normal new user creation
+      const userResult = await client.query(
+        `
+        INSERT INTO users (
+          username,
+          password_hash,
+          role,
+          is_active
+        )
+        VALUES ($1, $2, $3, TRUE)
+        RETURNING id, username, role, is_active, created_at, updated_at
+        `,
+        [
+          cleanUsername,
+          passwordHash,
+          staffRole,
+        ]
+      );
+      targetUser = userResult.rows[0];
+
+      // 6. Create corresponding staff record linked by user_id
+      const staffResult = await client.query(
+        `
+        INSERT INTO staff (
+          name,
+          phone,
+          user_id,
+          is_available
+        )
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, name, phone, user_id, is_available, created_at, updated_at
+        `,
+        [
+          cleanName,
+          cleanPhone,
+          targetUser.id,
+          Boolean(is_available),
+        ]
+      );
+      targetStaff = staffResult.rows[0];
+    }
 
     await client.query("COMMIT");
 
     // 7. Return clean response without password or password_hash
-    res.status(201).json({
-      message: "Staff created successfully",
+    res.status(isReactivation ? 200 : 201).json({
+      message: isReactivation ? "Staff account reactivated successfully" : "Staff created successfully",
+      is_reactivated: isReactivation,
       user: {
-        id: newUser.id,
-        username: newUser.username,
-        role: newUser.role,
-        is_active: newUser.is_active,
-        staff_id: newStaff.id,
+        id: targetUser.id,
+        username: targetUser.username,
+        role: targetUser.role,
+        is_active: targetUser.is_active,
+        staff_id: targetStaff.id,
       },
       staff: {
-        id: newStaff.id,
-        user_id: newUser.id,
-        name: newStaff.name,
-        phone: newStaff.phone || "",
-        is_available: newStaff.is_available,
-        is_active: newUser.is_active,
-        role: newUser.role,
-        username: newUser.username,
-        created_at: newStaff.created_at,
-        updated_at: newStaff.updated_at,
+        id: targetStaff.id,
+        user_id: targetUser.id,
+        name: targetStaff.name,
+        phone: targetStaff.phone || "",
+        is_available: targetStaff.is_available,
+        is_active: targetUser.is_active,
+        role: targetUser.role,
+        username: targetUser.username,
+        created_at: targetStaff.created_at,
+        updated_at: targetStaff.updated_at,
       },
     });
   } catch (error) {

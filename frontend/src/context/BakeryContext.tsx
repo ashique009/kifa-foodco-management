@@ -1391,7 +1391,11 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           );
         }
 
-        showToast('success', 'User Created', `${staffData.name} registered successfully.`);
+        if (res?.is_reactivated) {
+          showToast('success', 'Staff Account Reactivated', `${staffData.name} has been reactivated successfully.`);
+        } else {
+          showToast('success', 'User Created', `${staffData.name} registered successfully.`);
+        }
       } catch (err: any) {
         showToast('error', 'Failed to Create User', err.message);
         throw err;

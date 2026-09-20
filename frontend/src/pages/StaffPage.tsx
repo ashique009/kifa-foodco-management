@@ -96,9 +96,9 @@ export const StaffPage: React.FC = () => {
         return;
       }
 
-      // Check duplicate username in local staff list for instant validation
+      // Check duplicate username against active staff list for instant validation
       const isDuplicate = staff.some(
-        (s) => s.username && s.username.toLowerCase() === cleanUsername
+        (s) => s.isActive !== false && s.status !== 'Inactive' && s.username && s.username.toLowerCase() === cleanUsername
       );
       if (isDuplicate) {
         setFormError('Username already exists. Please choose a different username.');

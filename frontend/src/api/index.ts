@@ -109,7 +109,7 @@ export const staffApi = {
     role?: string;
     is_available?: boolean;
     designation?: string;
-  }) => api.post<{ message: string; staff: any; user: any }>('/api/staff', data),
+  }) => api.post<{ message: string; staff: any; user: any; is_reactivated?: boolean }>('/api/staff', data),
   delete: (id: string) =>
     api.delete<{ message: string; id: string }>(`/api/staff/${id}`),
 };

@@ -31,3 +31,15 @@
     background: #94A3B8;
   }
 }
+
+/* Mobile PWA standalone enhancements */
+.pwa-safe-bottom {
+  padding-bottom: max(0.375rem, env(safe-area-inset-bottom, 0px));
+}
+
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .pwa-main-bottom {
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+

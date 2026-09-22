@@ -713,6 +713,25 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }
   }, [isAuthenticated, refreshAllData]);
 
+  // Listen for network connectivity status
+  useEffect(() => {
+    const handleOffline = () => {
+      showToast('warning', 'Offline Mode', 'Internet connection lost. Transactions require an active connection.');
+    };
+    const handleOnline = () => {
+      showToast('info', 'Back Online', 'Connection restored. Syncing latest data.');
+      refreshAllData();
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [showToast, refreshAllData]);
+
   // Today's summary calculations
   const todayDateStr = useMemo(() => {
     return new Date().toISOString().slice(0, 10);

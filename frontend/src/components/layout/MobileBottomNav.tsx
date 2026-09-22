@@ -21,7 +21,7 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200/90 shadow-lg px-2 py-1.5 lg:hidden flex items-center justify-around">
+    <div className="fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-slate-200/90 shadow-lg px-2 py-1.5 pwa-safe-bottom lg:hidden flex items-center justify-around">
       {navItems.slice(0, 2).map((item) => {
         const Icon = item.icon;
         const isActive = currentPage === item.id;

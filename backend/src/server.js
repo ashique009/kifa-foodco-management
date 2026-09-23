@@ -1,5 +1,7 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 const pool = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
 const authenticateToken = require("./middleware/auth");
@@ -48,6 +50,34 @@ app.use(
     credentials: true,
   })
 );
+app.use(
+  helmet({
+    // API-only server responding to a separate frontend origin (Cloudflare
+    // Pages) — relax the resource policy so the frontend can read responses.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+
+// General API rate limit — generous enough for normal app usage, blocks abuse/scraping
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 500,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests, please try again later." },
+});
+app.use("/api", apiLimiter);
+
+// Stricter limit specifically on login to slow down brute-force credential guessing
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many login attempts, please try again later." },
+});
+app.use("/api/auth", authLimiter);
+
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/purchases", purchaseRoutes);

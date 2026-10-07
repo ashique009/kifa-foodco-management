@@ -364,6 +364,18 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const logout = () => {
     clearToken();
     setTokenState(null);
+    setProducts([]);
+    setShops([]);
+    setVehicles([]);
+    setStaff([]);
+    setTrips([]);
+    setSales([]);
+    setPayments([]);
+    setReturns([]);
+    setExpenses([]);
+    setSuppliers([]);
+    setPurchases([]);
+    setAlerts([]);
     showToast('info', 'Logged Out', 'You have been signed out safely.');
   };
 
@@ -442,50 +454,130 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setProducts(mappedProducts);
   }, []);
 
+  // Scoped refresh: purchases only
+  const refreshPurchases = useCallback(async () => {
+    const purchasesRes = await purchasesApi.getAll().catch(() => ({ purchases: [] }));
+    const mappedPurchases: Purchase[] = (purchasesRes.purchases || []).flatMap((pur: any) => {
+      const items = pur.items || [];
+      if (items.length === 0) {
+        return [
+          {
+            id: pur.id,
+            invoiceNumber: pur.purchase_number,
+            supplierId: pur.supplier_id || '',
+            supplierName: pur.supplier_name || 'Supplier',
+            productId: '',
+            productName: 'Raw Materials',
+            batchNumber: 'Default',
+            quantity: 1,
+            unitCost: Number(pur.total_amount || 0),
+            total: Number(pur.total_amount || 0),
+            date: pur.purchase_date ? pur.purchase_date.slice(0, 10) : '',
+          },
+        ];
+      }
+      return items.map((it: any) => ({
+        id: `${pur.id}-${it.id}`,
+        invoiceNumber: pur.purchase_number,
+        supplierId: pur.supplier_id || '',
+        supplierName: pur.supplier_name || 'Supplier',
+        productId: it.product_id || '',
+        productName: it.product_name || 'Raw Material',
+        batchNumber: it.batch_id ? it.batch_id.slice(0, 8) : 'Default',
+        quantity: Number(it.quantity || 0),
+        unitCost: Number(it.unit_cost || 0),
+        total: Number(it.line_total || it.quantity * it.unit_cost || 0),
+        date: pur.purchase_date ? pur.purchase_date.slice(0, 10) : '',
+      }));
+    });
+    setPurchases(mappedPurchases);
+  }, []);
+
   // FETCH ALL DATA FROM REAL BACKEND
   const refreshAllData = useCallback(async () => {
     if (!getToken()) return;
     setIsLoadingData(true);
 
     try {
-      // 1. Fetch Products & Godown Stock in parallel
-      await refreshProductsAndStock();
-
-      // 2. Fetch Shops & Ledgers
-      const shopsRes = await shopsApi.getAll().catch(() => ({ shops: [] }));
-      const mappedShops: Shop[] = await Promise.all(
-        (shopsRes.shops || []).map(async (s: any) => {
-          let outstanding = 0;
-          try {
-            const ledgerRes = await shopsApi.getLedger(s.id);
-            outstanding = Number(ledgerRes.outstanding || 0);
-          } catch {
-            outstanding = 0;
-          }
-
-          return {
-            id: s.id,
-            name: s.shop_name,
-            owner: s.owner_name || '',
-            phone: s.phone || '',
-            address: s.address || '',
-            route: 'Town Route',
-            outstanding,
-            creditLimit: Number(s.credit_limit || 0),
-            totalSales: 0,
-            totalCollected: 0,
-            createdAt: s.created_at ? s.created_at.slice(0, 10) : '',
-          };
-        })
-      );
-      setShops(mappedShops);
-
-      // 3. Fetch Vehicles & Staff
-      const [vehiclesRes, staffRes] = await Promise.all([
+      // Fetch independent resources concurrently
+      const [
+        productsRes,
+        stockRes,
+        shopsRes,
+        vehiclesRes,
+        staffRes,
+        suppliersRes,
+        purchasesRes,
+        tripsRes,
+        salesRes,
+        paymentsRes,
+        returnsRes,
+        settingsRes,
+      ] = await Promise.all([
+        productsApi.getAll().catch(() => ({ products: [] })),
+        stockApi.getGodownStock().catch(() => ({ stock: [] })),
+        shopsApi.getAll().catch(() => ({ shops: [] })),
         vehiclesApi.getAll().catch(() => ({ vehicles: [] })),
         staffApi.getAll().catch(() => ({ staff: [] })),
+        suppliersApi.getAll().catch(() => ({ suppliers: [] })),
+        purchasesApi.getAll().catch(() => ({ purchases: [] })),
+        tripsApi.getAll().catch(() => ({ trips: [] })),
+        salesApi.getAll().catch(() => ({ sales: [] })),
+        paymentsApi.getAll().catch(() => ({ payments: [] })),
+        returnsApi.getAll().catch(() => ({ returns: [] })),
+        settingsApi.get().catch(() => ({ settings: null })),
       ]);
 
+      // 1. Map Products & Godown Stock
+      const godownStockItems = stockRes.stock || [];
+      const mappedProducts: Product[] = (productsRes.products || []).map((p: any) => {
+        const productStockEntries = godownStockItems.filter(
+          (s: any) => s.product_id === p.id
+        );
+        const totalGodownQty = productStockEntries.reduce(
+          (sum: number, s: any) => sum + Number(s.quantity || 0),
+          0
+        );
+
+        const batches = productStockEntries.map((s: any) => ({
+          batchNumber: s.batch_number || 'Default',
+          expiryDate: s.expiry_date ? s.expiry_date.slice(0, 10) : '2026-09-30',
+          quantity: Number(s.quantity || 0),
+        }));
+
+        return {
+          id: p.id,
+          name: p.product_name,
+          sku: p.sku || '',
+          category: p.category || 'General',
+          unit: (p.unit?.toLowerCase() as any) || 'packet',
+          purchasePrice: Number(p.purchase_price || 0),
+          sellingPrice: Number(p.selling_price || 0),
+          godownStock: totalGodownQty,
+          reorderLevel: 50,
+          isActive: p.is_active !== false,
+          batches,
+        };
+      });
+      setProducts(mappedProducts);
+
+      // 2. Map Shops (outstanding now computed in bulk by backend endpoint)
+      const mappedShops: Shop[] = (shopsRes.shops || []).map((s: any) => ({
+        id: s.id,
+        name: s.shop_name,
+        owner: s.owner_name || '',
+        phone: s.phone || '',
+        address: s.address || '',
+        route: 'Town Route',
+        outstanding: Number(s.outstanding || 0),
+        creditLimit: Number(s.credit_limit || 0),
+        totalSales: 0,
+        totalCollected: 0,
+        createdAt: s.created_at ? s.created_at.slice(0, 10) : '',
+      }));
+      setShops(mappedShops);
+
+      // 3. Map Vehicles & Staff
       setVehicles(
         (vehiclesRes.vehicles || []).map((v: any) => ({
           id: v.id,
@@ -509,8 +601,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }))
       );
 
-      // 4. Fetch Suppliers
-      const suppliersRes = await suppliersApi.getAll().catch(() => ({ suppliers: [] }));
+      // 4. Map Suppliers & Purchases
       setSuppliers(
         (suppliersRes.suppliers || []).map((sup: any) => ({
           id: sup.id,
@@ -523,8 +614,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }))
       );
 
-      // 4b. Fetch Purchases
-      const purchasesRes = await purchasesApi.getAll().catch(() => ({ purchases: [] }));
       const mappedPurchases: Purchase[] = (purchasesRes.purchases || []).flatMap((pur: any) => {
         const items = pur.items || [];
         if (items.length === 0) {
@@ -560,8 +649,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
       setPurchases(mappedPurchases);
 
-      // 5. Fetch Trips with details
-      const tripsRes = await tripsApi.getAll().catch(() => ({ trips: [] }));
+      // 5. Fetch and map Trip details
       const rawTrips = tripsRes.trips || [];
 
       const detailedTrips: Trip[] = await Promise.all(
@@ -624,14 +712,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       setTrips(detailedTrips);
 
-      // 6. Fetch Sales, Payments, Returns & Settings
-      const [salesRes, paymentsRes, returnsRes, settingsRes] = await Promise.all([
-        salesApi.getAll().catch(() => ({ sales: [] })),
-        paymentsApi.getAll().catch(() => ({ payments: [] })),
-        returnsApi.getAll().catch(() => ({ returns: [] })),
-        settingsApi.get().catch(() => ({ settings: null })),
-      ]);
-
       if (settingsRes?.settings) {
         setBusinessSettings(settingsRes.settings);
       }
@@ -665,6 +745,8 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const method = toFrontendPaymentMethod(p.payment_method);
 
         const recNum = p.receipt_number || `REC-${p.id.slice(0, 8).toUpperCase()}`;
+        const linkedSale = p.sale_id ? mappedSales.find((s) => s.id === p.sale_id) : undefined;
+        const tripId = p.trip_id || linkedSale?.tripId || undefined;
 
         return {
           id: p.id,
@@ -672,6 +754,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           shopId: p.shop_id,
           shopName: p.shop_name || 'Shop',
           saleId: p.sale_id,
+          tripId,
           amount: Number(p.amount || 0),
           method,
           date: p.payment_date ? new Date(p.payment_date).toISOString().slice(0, 10) : '',
@@ -907,8 +990,21 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const markShopVisited = async (tripId: string, shopId: string) => {
     try {
       await tripsApi.markShopVisited(tripId, shopId);
+      const visitedTimeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      setTrips((prev) =>
+        prev.map((t) => {
+          if (t.id !== tripId) return t;
+          return {
+            ...t,
+            shops: t.shops.map((s) =>
+              s.shopId === shopId
+                ? { ...s, status: 'completed' as const, visitedAt: visitedTimeStr }
+                : s
+            ),
+          };
+        })
+      );
       showToast('success', 'Shop Visited', 'Shop marked as visited.');
-      await refreshAllData();
     } catch (err: any) {
       console.error('Mark shop visited error:', err);
       showToast('error', 'Update Failed', err.message || 'Error communicating with backend.');
@@ -978,6 +1074,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
           await paymentsApi.create({
             shop_id: saleData.shopId,
             sale_id: saleRes.sale.id,
+            trip_id: activeTripId,
             payment_method: payMethod,
             amount: saleData.paidAmount,
             notes: `Instant payment for invoice ${saleRes.sale.invoice_number}`,
@@ -1008,6 +1105,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const res = await paymentsApi.create({
           shop_id: paymentData.shopId,
           sale_id: paymentData.saleId,
+          trip_id: paymentData.tripId,
           payment_method: backendMethod,
           amount: paymentData.amount,
           reference_number: paymentData.reference,
@@ -1122,7 +1220,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         category: prodData.category,
       });
       showToast('success', 'Product Added', `${prodData.name} saved to catalog.`);
-      await refreshAllData();
+      await refreshProductsAndStock();
     } catch (err: any) {
       showToast('error', 'Failed to Add Product', err.message);
     }
@@ -1140,7 +1238,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         category: updated.category,
       });
       showToast('info', 'Product Updated', 'Product details saved.');
-      await refreshAllData();
+      await refreshProductsAndStock();
     } catch (err: any) {
       showToast('error', 'Update Failed', err.message);
     }
@@ -1150,7 +1248,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     try {
       await productsApi.delete(id);
       showToast('info', 'Product Deleted', 'Product permanently removed.');
-      await refreshAllData();
+      await refreshProductsAndStock();
     } catch (err: any) {
       showToast('error', 'Delete Failed', err.message);
     }
@@ -1453,14 +1551,40 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // 10. Suppliers CRUD
   const addSupplier = async (supData: Omit<Supplier, 'id'>) => {
     try {
-      await suppliersApi.create({
+      const res = await suppliersApi.create({
         supplier_name: supData.name,
         contact_person: supData.contactPerson,
         phone: supData.phone,
         address: supData.address,
       });
+
+      if (res?.supplier?.id) {
+        const sup = res.supplier;
+        const newSupplier: Supplier = {
+          id: sup.id,
+          name: sup.supplier_name,
+          contactPerson: sup.contact_person || '',
+          phone: sup.phone || '',
+          address: sup.address || '',
+          status: sup.is_active ? 'Active' : 'Inactive',
+          outstanding: 0,
+        };
+        setSuppliers((prev) => [newSupplier, ...prev.filter((s) => s.id !== newSupplier.id)]);
+      } else {
+        const suppliersRes = await suppliersApi.getAll().catch(() => ({ suppliers: [] }));
+        setSuppliers(
+          (suppliersRes.suppliers || []).map((s: any) => ({
+            id: s.id,
+            name: s.supplier_name,
+            contactPerson: s.contact_person || '',
+            phone: s.phone || '',
+            address: s.address || '',
+            status: s.is_active ? 'Active' : 'Inactive',
+            outstanding: 0,
+          }))
+        );
+      }
       showToast('success', 'Supplier Added', `${supData.name} registered.`);
-      await refreshAllData();
     } catch (err: any) {
       showToast('error', 'Failed to Add Supplier', err.message);
     }
@@ -1519,7 +1643,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
 
       showToast('success', 'Purchase Saved', `Added ${purData.quantity} units to godown stock.`);
-      await refreshAllData();
+      await Promise.all([refreshProductsAndStock(), refreshPurchases()]);
     } catch (err: any) {
       showToast('error', 'Purchase Failed', err.message);
     }

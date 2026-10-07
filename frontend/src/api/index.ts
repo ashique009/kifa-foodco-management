@@ -242,10 +242,12 @@ export const salesApi = {
 };
 
 export const paymentsApi = {
-  getAll: () => api.get<{ payments: any[] }>('/api/payments'),
+  getAll: (params?: { trip_id?: string }) =>
+    api.get<{ payments: any[] }>('/api/payments', { params }),
   create: (data: {
     shop_id: string;
     sale_id?: string;
+    trip_id?: string;
     payment_method: 'cash' | 'upi' | 'card' | 'bank_transfer';
     amount: number;
     payment_date?: string;

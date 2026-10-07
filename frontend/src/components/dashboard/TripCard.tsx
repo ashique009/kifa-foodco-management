@@ -35,7 +35,10 @@ export const TripCard: React.FC<TripCardProps> = ({
   };
 
   // 1. Trip Collection (Total payments received during THIS specific trip)
-  const tripPayments = payments.filter((p) => p.tripId === trip.id);
+  const tripSaleIds = new Set(sales.filter((s) => s.tripId === trip.id).map((s) => s.id));
+  const tripPayments = payments.filter(
+    (p) => p.tripId === trip.id || (p.saleId && tripSaleIds.has(p.saleId))
+  );
   const tripPaymentsSum = tripPayments.reduce((sum, p) => sum + p.amount, 0);
   const tripShopsCollectionSum = trip.shops.reduce(
     (sum, s) => sum + (s.paymentReceived || 0),

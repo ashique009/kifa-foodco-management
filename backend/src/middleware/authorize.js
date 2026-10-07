@@ -29,6 +29,8 @@ const requireManagerOrAdmin = (req, res, next) => {
 // Resolve staff ID for authenticated user
 const getStaffIdForUser = async (dbClientOrPool, userId) => {
   if (!userId) return null;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(userId)) return null;
   const db = dbClientOrPool || pool;
   const result = await db.query(
     `SELECT id FROM staff WHERE user_id = $1 LIMIT 1`,

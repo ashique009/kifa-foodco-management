@@ -1,5 +1,5 @@
 const pool = require("../config/database");
-const { hasBusinessAccess } = require("../middleware/authorize");
+const { hasBusinessAccess, getStaffIdForUser } = require("../middleware/authorize");
 
 // CREATE SHOP
 const createShop = async (req, res) => {
@@ -61,14 +61,41 @@ const createShop = async (req, res) => {
 // GET ALL SHOPS
 const getShops = async (req, res) => {
   try {
-    const result = await pool.query(
-      `
-      SELECT *
-      FROM shops
-      WHERE is_active = TRUE
-      ORDER BY shop_name ASC
-      `
-    );
+    let query = `
+      SELECT
+        s.*,
+        COALESCE(sle_agg.outstanding, 0)::numeric AS outstanding
+      FROM shops s
+      LEFT JOIN (
+        SELECT
+          shop_id,
+          COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0) AS outstanding
+        FROM shop_ledger_entries
+        GROUP BY shop_id
+      ) sle_agg ON sle_agg.shop_id = s.id
+      WHERE s.is_active = TRUE
+    `;
+    const params = [];
+
+    // If caller is restricted staff (Driver / Sales Staff), only return shops assigned to their trips
+    if (req.user && !hasBusinessAccess(req.user)) {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.json({ shops: [] });
+      }
+
+      query += ` AND s.id IN (
+        SELECT ts.shop_id
+        FROM trip_shops ts
+        JOIN trips t ON t.id = ts.trip_id
+        WHERE t.driver_id = $1 OR t.sales_staff_id = $1
+      ) `;
+      params.push(staffId);
+    }
+
+    query += ` ORDER BY s.shop_name ASC `;
+
+    const result = await pool.query(query, params);
 
     res.json({
       shops: result.rows,
@@ -86,6 +113,31 @@ const getShops = async (req, res) => {
 const getShopById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    // Role-based access check: If user is restricted staff (Driver / Sales Staff), verify that this shop is assigned to one of their trips
+    if (req.user && !hasBusinessAccess(req.user)) {
+      const staffId = await getStaffIdForUser(pool, req.user.userId);
+      if (!staffId) {
+        return res.status(403).json({
+          message: "No staff profile linked to this user",
+        });
+      }
+
+      const assignedShop = await pool.query(
+        `SELECT ts.id 
+         FROM trip_shops ts
+         JOIN trips t ON t.id = ts.trip_id
+         WHERE ts.shop_id = $1 AND (t.driver_id = $2 OR t.sales_staff_id = $2)
+         LIMIT 1`,
+        [id, staffId]
+      );
+
+      if (assignedShop.rows.length === 0) {
+        return res.status(403).json({
+          message: "You are not assigned to any trips serving this shop",
+        });
+      }
+    }
 
     const result = await pool.query(
       `
@@ -135,13 +187,12 @@ const getShopLedger = async (req, res) => {
       });
     }
 
+    const isBusiness = req.user && hasBusinessAccess(req.user);
+    let staffId = null;
+
     // Role-based access check: If user is restricted staff (Driver / Sales Staff), verify that this shop is assigned to one of their trips
-    if (req.user && !hasBusinessAccess(req.user)) {
-      const staffCheck = await pool.query(
-        `SELECT id FROM staff WHERE user_id = $1 LIMIT 1`,
-        [req.user.userId]
-      );
-      const staffId = staffCheck.rows[0]?.id;
+    if (!isBusiness) {
+      staffId = await getStaffIdForUser(pool, req.user?.userId);
       if (!staffId) {
         return res.status(403).json({
           message: "No staff profile linked to this user",
@@ -164,9 +215,9 @@ const getShopLedger = async (req, res) => {
       }
     }
 
-    // Get ledger entries
-    const ledgerResult = await pool.query(
-      `
+    // Get ledger entries: Admin and Manager get all company-wide entries
+    // For ordinary staff, scope entries to their assigned trips to avoid cross-trip leakage
+    let ledgerQuery = `
       SELECT
         sle.id,
         sle.entry_type,
@@ -182,10 +233,26 @@ const getShopLedger = async (req, res) => {
       LEFT JOIN sales s
         ON s.id = sle.sale_id
       WHERE sle.shop_id = $1
-      ORDER BY sle.created_at ASC
-      `,
-      [id]
-    );
+    `;
+    const ledgerParams = [id];
+
+    if (!isBusiness && staffId) {
+      ledgerQuery += `
+        AND (
+          s.trip_id IN (SELECT id FROM trips WHERE driver_id = $2 OR sales_staff_id = $2)
+          OR (sle.sale_id IS NULL AND sle.created_at >= (
+            SELECT COALESCE(MIN(t.created_at), NOW() - INTERVAL '30 days')
+            FROM trips t
+            WHERE t.driver_id = $2 OR t.sales_staff_id = $2
+          ))
+        )
+      `;
+      ledgerParams.push(staffId);
+    }
+
+    ledgerQuery += ` ORDER BY sle.created_at ASC `;
+
+    const ledgerResult = await pool.query(ledgerQuery, ledgerParams);
 
     // Calculate current outstanding
     const balanceResult = await pool.query(

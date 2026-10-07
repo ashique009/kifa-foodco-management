@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '../components/ui/Modal';
 import { Button } from '../components/ui/Button';
-import { Input, Select } from '../components/ui/Input';
+import { Select } from '../components/ui/Input';
 import { useBakery } from '../context/BakeryContext';
-import { Product, PaymentMethod, SaleItem } from '../types';
+import { PaymentMethod, SaleItem } from '../types';
 import { generateIdempotencyKey } from '../utils/idempotency';
-import { formatINR } from '../utils/formatters';
-import { Plus, Minus, Trash2, Store, ArrowRight, ArrowLeft, Check, Package } from 'lucide-react';
+import { Plus, Minus, Trash2, ArrowRight, ArrowLeft, Check } from 'lucide-react';
 
 interface RecordSaleModalProps {
   isOpen: boolean;
@@ -59,10 +58,10 @@ export const RecordSaleModal: React.FC<RecordSaleModalProps> = ({
   };
 
   const formatUnit = (unit?: string, qty: number = 0) => {
-    if (!unit) return 'packets';
+    if (!unit) return qty === 1 ? 'packet' : 'packets';
     const lower = unit.toLowerCase();
-    if (lower === 'packet' || lower === 'packets') return 'packets';
-    return lower.endsWith('s') ? lower : `${lower}s`;
+    if (lower === 'packet' || lower === 'packets') return qty === 1 ? 'packet' : 'packets';
+    return qty === 1 ? lower.replace(/s$/, '') : lower.endsWith('s') ? lower : `${lower}s`;
   };
 
   const getItemError = (item: { productId: string; quantity: number }) => {

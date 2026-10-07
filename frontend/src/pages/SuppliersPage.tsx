@@ -4,8 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { Input, Select, SearchInput } from '../components/ui/Input';
-import { Building2, Plus, Phone, MapPin, IndianRupee, MoreVertical, Edit2, Trash2, RefreshCw } from 'lucide-react';
+import { Input, SearchInput } from '../components/ui/Input';
+import { Plus, Phone, MapPin, MoreVertical, Edit2, Trash2, RefreshCw } from 'lucide-react';
 import { Supplier } from '../types';
 
 export const SuppliersPage: React.FC = () => {

@@ -7,7 +7,6 @@ import { ProgressBar } from '../components/ui/ProgressBar';
 import { Tabs } from '../components/ui/Tabs';
 import { getTripShopProgress } from '../utils/tripProgress';
 import { Plus, Truck, Calendar, Store, ArrowRight, User } from 'lucide-react';
-import { Trip } from '../types';
 
 interface TripsPageProps {
   onSelectTrip: (tripId: string) => void;

@@ -6,7 +6,7 @@ import { Tabs } from '../components/ui/Tabs';
 import { Badge } from '../components/ui/Badge';
 import { Drawer } from '../components/ui/Modal';
 import { SearchInput } from '../components/ui/Input';
-import { Layers, AlertTriangle, Clock, ArrowRight, Package, CheckCircle2 } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Product } from '../types';
 
 export const StockPage: React.FC = () => {

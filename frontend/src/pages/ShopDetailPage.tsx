@@ -7,16 +7,10 @@ import { RecordSaleModal } from './RecordSaleModal';
 import { ReceivePaymentModal } from './ReceivePaymentModal';
 import {
   ArrowLeft,
-  Store,
   Phone,
   MapPin,
   IndianRupee,
-  Receipt,
-  Wallet,
   Plus,
-  ArrowUpRight,
-  ArrowDownLeft,
-  Calendar,
 } from 'lucide-react';
 
 interface ShopDetailPageProps {

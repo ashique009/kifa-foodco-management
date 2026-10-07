@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useBakery } from '../context/BakeryContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -17,7 +17,6 @@ import {
   CheckCheck,
   PackageCheck,
   Store,
-  Phone,
   ArrowRight,
   Layers,
   Sparkles,
@@ -25,7 +24,7 @@ import {
   AlertTriangle,
   Plus,
 } from 'lucide-react';
-import { TripStatus, TripLoadedItem } from '../types';
+import { TripLoadedItem } from '../types';
 
 interface TripDetailPageProps {
   tripId: string;
@@ -42,6 +41,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
     trips,
     shops,
     updateTripStatus,
+    fetchTripDetails,
     markShopVisited,
     sales,
     payments,
@@ -51,6 +51,7 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   } = useBakery();
   const [activeTab, setActiveTab] = useState<'shops' | 'stock'>('shops');
   const [isCompleteDialogOpen, setIsCompleteDialogOpen] = useState(false);
+  const fetchedTripIdRef = useRef<string | null>(null);
 
   // Status transition & action loading states
   const [isStatusUpdating, setIsStatusUpdating] = useState(false);
@@ -78,6 +79,24 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   const [damageError, setDamageError] = useState('');
 
   const trip = trips.find((t) => t.id === tripId);
+
+  // If trip details are not yet loaded (e.g. historical/completed trip loaded without details at startup),
+  // fetch them on-demand once when the detail page opens.
+  useEffect(() => {
+    if (!trip) return;
+    // For active trips (In Progress / Loaded) with details or newly created Draft trips, skip.
+    // If details are already present (shops or loadedItems populated), skip.
+    if ((trip.shops && trip.shops.length > 0) || (trip.loadedItems && trip.loadedItems.length > 0)) {
+      return;
+    }
+    // Prevent repeated fetch for the same tripId
+    if (fetchedTripIdRef.current === tripId) {
+      return;
+    }
+
+    fetchedTripIdRef.current = tripId;
+    fetchTripDetails(tripId);
+  }, [tripId, trip, fetchTripDetails]);
 
   if (!trip) {
     return (

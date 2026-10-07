@@ -50,7 +50,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen = false,
   onCloseMobile,
 }) => {
-  const { currentUser, canManage } = useBakery();
+  const { canManage } = useBakery();
   const [isMoreExpanded, setIsMoreExpanded] = useState(false);
 
   const mainNav = [

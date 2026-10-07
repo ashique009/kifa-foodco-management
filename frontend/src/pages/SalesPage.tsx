@@ -6,8 +6,7 @@ import { SearchInput } from '../components/ui/Input';
 import { PaymentMethodBadge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { BusinessDocumentHeader } from '../components/ui/BusinessDocumentHeader';
-import { formatINR } from '../utils/formatters';
-import { Plus, Receipt, Calendar, Store, Filter, IndianRupee, ChevronRight } from 'lucide-react';
+import { Plus, Calendar, Filter, ChevronRight } from 'lucide-react';
 import { Sale } from '../types';
 
 interface SalesPageProps {

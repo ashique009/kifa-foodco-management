@@ -7,8 +7,7 @@ import { PaymentMethodBadge } from '../components/ui/Badge';
 import { ReceivePaymentModal } from './ReceivePaymentModal';
 import { Modal } from '../components/ui/Modal';
 import { BusinessDocumentHeader } from '../components/ui/BusinessDocumentHeader';
-import { formatINR } from '../utils/formatters';
-import { Plus, Filter, Calendar, SlidersHorizontal, Check } from 'lucide-react';
+import { Plus, Calendar, SlidersHorizontal } from 'lucide-react';
 
 export const PaymentsPage: React.FC = () => {
   const { payments, paymentBreakdown, todayCollectionTotal, businessSettings } = useBakery();

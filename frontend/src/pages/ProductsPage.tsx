@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { SearchInput, Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
 import { Badge } from '../components/ui/Badge';
-import { Plus, Package, Edit2, ChevronRight, Trash2, MoreVertical, Archive, RefreshCw } from 'lucide-react';
+import { Plus, Edit2, ChevronRight, Trash2, MoreVertical, RefreshCw } from 'lucide-react';
 import { Product, ProductUnit } from '../types';
 
 export const ProductsPage: React.FC = () => {

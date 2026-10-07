@@ -4,8 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { Input, Select } from '../components/ui/Input';
-import { Car, Plus, Truck, CheckCircle2, Wrench } from 'lucide-react';
-import { Vehicle, VehicleStatus } from '../types';
+import { Plus } from 'lucide-react';
+import { VehicleStatus } from '../types';
 
 export const VehiclesPage: React.FC = () => {
   const { vehicles, addVehicle } = useBakery();

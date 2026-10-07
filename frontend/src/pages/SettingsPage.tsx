@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Tabs } from '../components/ui/Tabs';
-import { Shield, Lock, AlertCircle, Save, CheckCircle2 } from 'lucide-react';
+import { Shield, Lock, Save, CheckCircle2 } from 'lucide-react';
 
 export const SettingsPage: React.FC = () => {
   const { currentUser, canManage, businessSettings, updateBusinessProfile, updateInvoiceSettings } = useBakery();

@@ -1,26 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useBakery } from '../context/BakeryContext';
 import { Card, CardHeader, CardTitle } from '../components/ui/Card';
-import { Button } from '../components/ui/Button';
 import { Tabs } from '../components/ui/Tabs';
-import { PaymentMethodBadge } from '../components/ui/Badge';
 import { SalesTrendChart, DayData } from '../components/charts/SalesTrendChart';
 import { PaymentBreakdownChart } from '../components/charts/PaymentBreakdownChart';
 import { TopProductsChart, TopProductItem } from '../components/charts/TopProductsChart';
-import {
-  BarChart3,
-  Download,
-  IndianRupee,
-  ShoppingBag,
-  TrendingUp,
-  Store,
-  Truck,
-  RotateCcw,
-  Phone,
-} from 'lucide-react';
+import { Phone } from 'lucide-react';
 
 export const ReportsPage: React.FC = () => {
-  const { sales, payments, shops, products, trips, returns } = useBakery();
+  const { sales, payments, shops, trips, returns } = useBakery();
   const [timeFilter, setTimeFilter] = useState<'today' | 'week' | 'month'>('today');
   const [reportType, setReportType] = useState<
     'sales' | 'collection' | 'outstanding' | 'product' | 'trip'

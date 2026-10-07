@@ -15,7 +15,6 @@ export const StaffPage: React.FC = () => {
     archiveStaff,
     deleteStaff,
     isStaffInUse,
-    currentUser,
     isAdmin,
     canManage,
   } = useBakery();

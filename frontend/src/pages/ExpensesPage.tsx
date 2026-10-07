@@ -4,7 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { Wallet, Plus, Fuel, Wrench, Coffee, MoreHorizontal, Filter, Calendar } from 'lucide-react';
+import { Plus, Fuel, Wrench, Coffee, MoreHorizontal, Filter, Calendar } from 'lucide-react';
 import { ExpenseCategory } from '../types';
 
 export const ExpensesPage: React.FC = () => {

@@ -4,8 +4,7 @@ import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { useBakery } from '../context/BakeryContext';
 import { generateIdempotencyKey } from '../utils/idempotency';
-import { formatINR } from '../utils/formatters';
-import { CheckCircle2, IndianRupee } from 'lucide-react';
+import { CheckCircle2 } from 'lucide-react';
 
 interface ReceivePaymentModalProps {
   isOpen: boolean;

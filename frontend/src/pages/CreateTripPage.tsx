@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useBakery } from '../context/BakeryContext';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
+import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
-import { Plus, Trash2, ArrowLeft, Check, Store } from 'lucide-react';
+import { Plus, Trash2, ArrowLeft, Check } from 'lucide-react';
 import { TripLoadedItem, TripShop } from '../types';
 import { getTodayIsoString } from '../utils/date';
 

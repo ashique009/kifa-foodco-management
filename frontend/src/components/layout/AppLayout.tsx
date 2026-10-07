@@ -6,7 +6,7 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { QuickSearchModal } from './QuickSearchModal';
 import { ToastContainer } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
-import { Plus, ShoppingCart, IndianRupee, Truck, RotateCcw } from 'lucide-react';
+import { ShoppingCart, IndianRupee, Truck } from 'lucide-react';
 import { useBakery } from '../../context/BakeryContext';
 
 interface AppLayoutProps {

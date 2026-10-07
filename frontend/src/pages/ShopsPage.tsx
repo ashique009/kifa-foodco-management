@@ -4,8 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { SearchInput, Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { Store, Plus, Phone, MapPin, ArrowRight, AlertCircle } from 'lucide-react';
-import { Shop } from '../types';
+import { Store, Plus, Phone, MapPin, ArrowRight } from 'lucide-react';
 
 interface ShopsPageProps {
   onSelectShop: (shopId: string) => void;

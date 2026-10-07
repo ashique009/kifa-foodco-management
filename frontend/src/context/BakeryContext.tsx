@@ -22,11 +22,11 @@ import {
   BusinessAlert,
   TripStatus,
   TripShop,
+  TripLoadedItem,
   ShopLedgerEntry,
   ProductUnit,
 } from '../types';
 import {
-  authApi,
   productsApi,
   stockApi,
   batchesApi,
@@ -44,15 +44,12 @@ import {
 } from '../api';
 import {
   getToken,
-  setToken,
   clearToken,
   getStoredUser,
-  setStoredUser,
   AuthUser,
 } from '../api/client';
 import { generateIdempotencyKey } from '../utils/idempotency';
 import { toBackendPaymentMethod, toFrontendPaymentMethod } from '../utils/payment';
-import { toIsoDateString, formatTimeShort } from '../utils/date';
 import { formatINR } from '../utils/formatters';
 
 export interface ToastNotification {
@@ -120,6 +117,7 @@ interface BakeryContextType {
 
   createTrip: (tripData: Omit<Trip, 'id' | 'tripNumber'>) => Promise<Trip | null>;
   updateTripStatus: (tripId: string, status: TripStatus) => Promise<void>;
+  fetchTripDetails: (tripId: string) => Promise<Trip | null>;
   markShopVisited: (tripId: string, shopId: string) => Promise<void>;
   recordSale: (saleData: Omit<Sale, 'id' | 'invoiceNumber' | 'date' | 'time'> & { idempotencyKey?: string }) => Promise<Sale | null>;
   receivePayment: (paymentData: Omit<Payment, 'id' | 'receiptNumber' | 'date'> & { idempotencyKey?: string }) => Promise<Payment | null>;
@@ -167,7 +165,6 @@ interface BakeryContextType {
   deleteSupplier: (id: string) => void;
   isSupplierInUse: (id: string) => boolean;
   getShopLedger: (shopId: string) => ShopLedgerEntry[];
-  resetToDemoData: () => void;
 
   // Settings
   businessSettings: BusinessSettings;
@@ -198,7 +195,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     const isAdmin = r === 'admin';
     const isManager = r === 'manager';
     const isDriver = r === 'driver';
-    const isSalesStaff = r === 'sales_staff';
     const canManage = isAdmin || isManager;
     const userRole: 'admin' | 'manager' | 'driver' | 'sales_staff' =
       isAdmin ? 'admin' : isManager ? 'manager' : isDriver ? 'driver' : 'sales_staff';
@@ -493,37 +489,25 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     setPurchases(mappedPurchases);
   }, []);
 
-  // FETCH ALL DATA FROM REAL BACKEND
-  const refreshAllData = useCallback(async () => {
-    if (!getToken()) return;
-    setIsLoadingData(true);
-
+  // Load deferred non-critical data in the background without blocking the Dashboard
+  const loadDeferredData = useCallback(async () => {
     try {
-      // Fetch independent resources concurrently
       const [
         productsRes,
         stockRes,
-        shopsRes,
         vehiclesRes,
         staffRes,
         suppliersRes,
         purchasesRes,
-        tripsRes,
-        salesRes,
-        paymentsRes,
         returnsRes,
         settingsRes,
       ] = await Promise.all([
         productsApi.getAll().catch(() => ({ products: [] })),
         stockApi.getGodownStock().catch(() => ({ stock: [] })),
-        shopsApi.getAll().catch(() => ({ shops: [] })),
         vehiclesApi.getAll().catch(() => ({ vehicles: [] })),
         staffApi.getAll().catch(() => ({ staff: [] })),
         suppliersApi.getAll().catch(() => ({ suppliers: [] })),
         purchasesApi.getAll().catch(() => ({ purchases: [] })),
-        tripsApi.getAll().catch(() => ({ trips: [] })),
-        salesApi.getAll().catch(() => ({ sales: [] })),
-        paymentsApi.getAll().catch(() => ({ payments: [] })),
         returnsApi.getAll().catch(() => ({ returns: [] })),
         settingsApi.get().catch(() => ({ settings: null })),
       ]);
@@ -561,23 +545,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
       setProducts(mappedProducts);
 
-      // 2. Map Shops (outstanding now computed in bulk by backend endpoint)
-      const mappedShops: Shop[] = (shopsRes.shops || []).map((s: any) => ({
-        id: s.id,
-        name: s.shop_name,
-        owner: s.owner_name || '',
-        phone: s.phone || '',
-        address: s.address || '',
-        route: 'Town Route',
-        outstanding: Number(s.outstanding || 0),
-        creditLimit: Number(s.credit_limit || 0),
-        totalSales: 0,
-        totalCollected: 0,
-        createdAt: s.created_at ? s.created_at.slice(0, 10) : '',
-      }));
-      setShops(mappedShops);
-
-      // 3. Map Vehicles & Staff
+      // 2. Map Vehicles & Staff
       setVehicles(
         (vehiclesRes.vehicles || []).map((v: any) => ({
           id: v.id,
@@ -601,7 +569,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         }))
       );
 
-      // 4. Map Suppliers & Purchases
+      // 3. Map Suppliers & Purchases
       setSuppliers(
         (suppliersRes.suppliers || []).map((sup: any) => ({
           id: sup.id,
@@ -649,39 +617,110 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
       setPurchases(mappedPurchases);
 
-      // 5. Fetch and map Trip details
+      // 4. Map Settings
+      if (settingsRes?.settings) {
+        setBusinessSettings(settingsRes.settings);
+      }
+
+      // 5. Map Returns
+      const mappedReturns: ReturnItem[] = (returnsRes.returns || []).flatMap((r: any) =>
+        (r.items || []).map((it: any) => ({
+          id: it.id,
+          tripId: r.trip_id,
+          shopId: r.shop_id,
+          shopName: r.shop_name || 'Shop',
+          productId: it.product_id,
+          productName: it.product_name || 'Bakery Item',
+          unit: 'packet' as const,
+          quantity: Number(it.quantity || 0),
+          reason: (r.reason === 'damaged' ? 'Damaged' : r.reason === 'expired' ? 'Expired' : 'Shop Return') as any,
+          date: r.return_date ? new Date(r.return_date).toISOString().slice(0, 10) : '',
+          notes: r.notes || undefined,
+        }))
+      );
+      setReturns(mappedReturns);
+    } catch (err: any) {
+      console.warn('Deferred background data loading warning:', err);
+    }
+  }, []);
+
+  // FETCH ALL DATA FROM REAL BACKEND (Dashboard-First / Deferred Loading)
+  const refreshAllData = useCallback(async () => {
+    if (!getToken()) return;
+    setIsLoadingData(true);
+
+    try {
+      // PHASE 1: Critical Dashboard Path
+      // Fetch only the 4 resources strictly required for the Dashboard
+      const [
+        shopsRes,
+        tripsRes,
+        salesRes,
+        paymentsRes,
+      ] = await Promise.all([
+        shopsApi.getAll().catch(() => ({ shops: [] })),
+        tripsApi.getAll().catch(() => ({ trips: [] })),
+        salesApi.getAll().catch(() => ({ sales: [] })),
+        paymentsApi.getAll().catch(() => ({ payments: [] })),
+      ]);
+
+      // 1. Map Shops (outstanding computed in bulk by backend endpoint)
+      const mappedShops: Shop[] = (shopsRes.shops || []).map((s: any) => ({
+        id: s.id,
+        name: s.shop_name,
+        owner: s.owner_name || '',
+        phone: s.phone || '',
+        address: s.address || '',
+        route: 'Town Route',
+        outstanding: Number(s.outstanding || 0),
+        creditLimit: Number(s.credit_limit || 0),
+        totalSales: 0,
+        totalCollected: 0,
+        createdAt: s.created_at ? s.created_at.slice(0, 10) : '',
+      }));
+      setShops(mappedShops);
+
+      // 2. Fetch and map Trip details (Active trips loaded eagerly; historical loaded on demand)
       const rawTrips = tripsRes.trips || [];
 
       const detailedTrips: Trip[] = await Promise.all(
         rawTrips.map(async (t: any) => {
-          // Fetch trip shops and trip stock
-          const [tShopsRes, tStockRes] = await Promise.all([
-            tripsApi.getShops(t.id).catch(() => ({ shops: [] })),
-            tripsApi.getStock(t.id).catch(() => ({ stock: [] })),
-          ]);
+          const mappedStatus = mapBackendTripStatus(t.status);
+          const isActive = mappedStatus === 'In Progress' || mappedStatus === 'Loaded';
 
-          const tripShops = (tShopsRes.shops || []).map((ts: any) => ({
-            shopId: ts.shop_id,
-            shopName: ts.shop_name,
-            ownerName: ts.owner_name || '',
-            phone: ts.phone || '',
-            address: ts.address || '',
-            sequence: ts.visit_order || 1,
-            status: ts.visited_at ? ('completed' as const) : ('pending' as const),
-            visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
-          }));
+          // Fetch trip shops and trip stock only for active trips during startup (Optimization #1)
+          let tripShops: TripShop[] = [];
+          let loadedItems: TripLoadedItem[] = [];
 
-          const loadedItems = (tStockRes.stock || []).map((st: any) => ({
-            productId: st.product_id,
-            productName: st.product_name,
-            unit: (st.unit || 'packet') as ProductUnit,
-            loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
-            soldQty: Number(st.sold_quantity || 0),
-            damagedQty: Number(st.damaged_quantity || 0),
-            returnedQty: Number(st.returned_quantity || 0),
-            vanBalance: Number(st.van_balance !== undefined ? st.van_balance : 0),
-            unitPrice: Number(st.unit_price || 30),
-          }));
+          if (isActive) {
+            const [tShopsRes, tStockRes] = await Promise.all([
+              tripsApi.getShops(t.id).catch(() => ({ shops: [] })),
+              tripsApi.getStock(t.id).catch(() => ({ stock: [] })),
+            ]);
+
+            tripShops = (tShopsRes.shops || []).map((ts: any) => ({
+              shopId: ts.shop_id,
+              shopName: ts.shop_name,
+              ownerName: ts.owner_name || '',
+              phone: ts.phone || '',
+              address: ts.address || '',
+              sequence: ts.visit_order || 1,
+              status: ts.visited_at ? ('completed' as const) : ('pending' as const),
+              visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+            }));
+
+            loadedItems = (tStockRes.stock || []).map((st: any) => ({
+              productId: st.product_id,
+              productName: st.product_name,
+              unit: (st.unit || 'packet') as ProductUnit,
+              loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
+              soldQty: Number(st.sold_quantity || 0),
+              damagedQty: Number(st.damaged_quantity || 0),
+              returnedQty: Number(st.returned_quantity || 0),
+              vanBalance: Number(st.van_balance !== undefined ? st.van_balance : 0),
+              unitPrice: Number(st.unit_price || 30),
+            }));
+          }
 
           const tripDateStr = t.trip_date
             ? new Date(t.trip_date).toISOString().slice(0, 10)
@@ -698,7 +737,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
             driverName: t.driver_name || 'Driver',
             staffId: t.sales_staff_id || '',
             staffName: t.sales_staff_name || 'Sales Staff',
-            status: mapBackendTripStatus(t.status),
+            status: mappedStatus,
             shops: tripShops,
             loadedItems,
             startedAt: t.started_at
@@ -712,10 +751,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       setTrips(detailedTrips);
 
-      if (settingsRes?.settings) {
-        setBusinessSettings(settingsRes.settings);
-      }
-
+      // 3. Map Sales
       const mappedSales: Sale[] = (salesRes.sales || []).map((s: any) => ({
         id: s.id,
         invoiceNumber: s.invoice_number,
@@ -741,6 +777,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }));
       setSales(mappedSales);
 
+      // 4. Map Payments
       const mappedPayments: Payment[] = (paymentsRes.payments || []).map((p: any) => {
         const method = toFrontendPaymentMethod(p.payment_method);
 
@@ -763,31 +800,20 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       });
       setPayments(mappedPayments);
 
-      const mappedReturns: ReturnItem[] = (returnsRes.returns || []).flatMap((r: any) =>
-        (r.items || []).map((it: any) => ({
-          id: it.id,
-          tripId: r.trip_id,
-          shopId: r.shop_id,
-          shopName: r.shop_name || 'Shop',
-          productId: it.product_id,
-          productName: it.product_name || 'Bakery Item',
-          unit: 'packet' as const,
-          quantity: Number(it.quantity || 0),
-          reason: (r.reason === 'damaged' ? 'Damaged' : r.reason === 'expired' ? 'Expired' : 'Shop Return') as any,
-          date: r.return_date ? new Date(r.return_date).toISOString().slice(0, 10) : '',
-          notes: r.notes || undefined,
-        }))
-      );
-      setReturns(mappedReturns);
-
       setAlerts([]);
     } catch (err: any) {
-      console.error('Error loading backend data:', err);
-      showToast('error', 'Data Sync Warning', err.message || 'Unable to sync some records.');
+      console.error('Error loading critical backend data:', err);
+      showToast('error', 'Data Sync Warning', err.message || 'Unable to sync critical records.');
     } finally {
+      // Release global startup blocking loading screen immediately!
+      // Dashboard is now interactive with accurate real-time metrics.
       setIsLoadingData(false);
     }
-  }, [showToast]);
+
+    // PHASE 2: Deferred Background Path
+    // Kick off non-critical data loading in the background (non-blocking)
+    loadDeferredData();
+  }, [loadDeferredData, showToast]);
 
   // Initial load when authenticated
   useEffect(() => {
@@ -985,6 +1011,57 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       }
     }, loadingMessage);
   };
+
+  // On-demand fetch of trip details (shops & stock) for a specific trip (e.g. historical trip opened in TripDetailPage)
+  const fetchTripDetails = useCallback(async (tripId: string): Promise<Trip | null> => {
+    try {
+      const [tShopsRes, tStockRes] = await Promise.all([
+        tripsApi.getShops(tripId).catch(() => ({ shops: [] })),
+        tripsApi.getStock(tripId).catch(() => ({ stock: [] })),
+      ]);
+
+      const tripShops: TripShop[] = (tShopsRes.shops || []).map((ts: any) => ({
+        shopId: ts.shop_id,
+        shopName: ts.shop_name,
+        ownerName: ts.owner_name || '',
+        phone: ts.phone || '',
+        address: ts.address || '',
+        sequence: ts.visit_order || 1,
+        status: ts.visited_at ? ('completed' as const) : ('pending' as const),
+        visitedAt: ts.visited_at ? new Date(ts.visited_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : undefined,
+      }));
+
+      const loadedItems: TripLoadedItem[] = (tStockRes.stock || []).map((st: any) => ({
+        productId: st.product_id,
+        productName: st.product_name,
+        unit: (st.unit || 'packet') as ProductUnit,
+        loadedQty: Number(st.loaded_quantity !== undefined ? st.loaded_quantity : st.quantity || 0),
+        soldQty: Number(st.sold_quantity || 0),
+        damagedQty: Number(st.damaged_quantity || 0),
+        returnedQty: Number(st.returned_quantity || 0),
+        vanBalance: Number(st.van_balance !== undefined ? st.van_balance : 0),
+        unitPrice: Number(st.unit_price || 30),
+      }));
+
+      let updatedTrip: Trip | null = null;
+      setTrips((prev) =>
+        prev.map((t) => {
+          if (t.id !== tripId) return t;
+          updatedTrip = {
+            ...t,
+            shops: tripShops,
+            loadedItems,
+          };
+          return updatedTrip;
+        })
+      );
+
+      return updatedTrip;
+    } catch (err: any) {
+      console.error('Fetch trip details error:', err);
+      return null;
+    }
+  }, []);
 
   // Mark Shop Visited on Trip
   const markShopVisited = async (tripId: string, shopId: string) => {
@@ -1752,11 +1829,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     }, 'Saving invoice preferences...');
   };
 
-  const resetToDemoData = () => {
-    refreshAllData();
-    showToast('info', 'Data Refreshed', 'Records reloaded from PostgreSQL backend.');
-  };
-
   return (
     <BakeryContext.Provider
       value={{
@@ -1795,6 +1867,7 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         paymentBreakdown,
         createTrip,
         updateTripStatus,
+        fetchTripDetails,
         markShopVisited,
         recordSale,
         receivePayment,
@@ -1823,7 +1896,6 @@ export const BakeryProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         deleteSupplier,
         isSupplierInUse,
         getShopLedger,
-        resetToDemoData,
         businessSettings,
         updateBusinessProfile,
         updateInvoiceSettings,

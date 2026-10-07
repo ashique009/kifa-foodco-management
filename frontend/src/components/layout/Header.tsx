@@ -3,8 +3,6 @@ import {
   Menu,
   Bell,
   Search,
-  User as UserIcon,
-  CheckCircle2,
 } from 'lucide-react';
 import logoImg from '../../assets/logo.jpg';
 import { useBakery } from '../../context/BakeryContext';

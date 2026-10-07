@@ -5,8 +5,7 @@ import { Input, Select } from '../components/ui/Input';
 import { useBakery } from '../context/BakeryContext';
 import { ReturnReason } from '../types';
 import { generateIdempotencyKey } from '../utils/idempotency';
-import { formatINR } from '../utils/formatters';
-import { Plus, Minus, RotateCcw } from 'lucide-react';
+import { Plus, Minus } from 'lucide-react';
 
 interface RecordReturnModalProps {
   isOpen: boolean;
@@ -21,7 +20,7 @@ export const RecordReturnModal: React.FC<RecordReturnModalProps> = ({
   shopId: initialShopId,
   tripId,
 }) => {
-  const { shops, products, trips, recordReturn } = useBakery();
+  const { shops, products, recordReturn } = useBakery();
   const [selectedShopId, setSelectedShopId] = useState<string>(initialShopId || '');
   const [selectedProductId, setSelectedProductId] = useState<string>(
     products.find((p) => p.isActive)?.id || products[0]?.id || ''

@@ -4,7 +4,7 @@ import { Card, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input, Select } from '../components/ui/Input';
 import { Modal } from '../components/ui/Modal';
-import { Receipt, Check, IndianRupee, Plus, ChevronRight, Calendar, Package } from 'lucide-react';
+import { ChevronRight, Calendar } from 'lucide-react';
 import { Purchase } from '../types';
 
 export const PurchasesPage: React.FC = () => {

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { BakeryProvider } from './context/BakeryContext';
 import { AppLayout } from './components/layout/AppLayout';
 import { NavigationPage } from './components/layout/Sidebar';
@@ -7,24 +7,26 @@ import { TripsPage } from './pages/TripsPage';
 import { CreateTripPage } from './pages/CreateTripPage';
 import { TripDetailPage } from './pages/TripDetailPage';
 import { ShopVisitPage } from './pages/ShopVisitPage';
-import { SalesPage } from './pages/SalesPage';
-import { PaymentsPage } from './pages/PaymentsPage';
-import { ShopsPage } from './pages/ShopsPage';
-import { ShopDetailPage } from './pages/ShopDetailPage';
-import { StockPage } from './pages/StockPage';
-import { ProductsPage } from './pages/ProductsPage';
-import { VehiclesPage } from './pages/VehiclesPage';
-import { StaffPage } from './pages/StaffPage';
-import { SuppliersPage } from './pages/SuppliersPage';
-import { PurchasesPage } from './pages/PurchasesPage';
-import { ExpensesPage } from './pages/ExpensesPage';
-import { ReportsPage } from './pages/ReportsPage';
-import { SettingsPage } from './pages/SettingsPage';
 import { RecordSaleModal } from './pages/RecordSaleModal';
 import { ReceivePaymentModal } from './pages/ReceivePaymentModal';
 import { useBakery } from './context/BakeryContext';
 import { LoginPage } from './pages/LoginPage';
 import { LoadingOverlay } from './components/ui/LoadingOverlay';
+
+// Lazy-load secondary and administrative pages to split bundle size safely
+const SalesPage = lazy(() => import('./pages/SalesPage').then((m) => ({ default: m.SalesPage })));
+const PaymentsPage = lazy(() => import('./pages/PaymentsPage').then((m) => ({ default: m.PaymentsPage })));
+const ShopsPage = lazy(() => import('./pages/ShopsPage').then((m) => ({ default: m.ShopsPage })));
+const ShopDetailPage = lazy(() => import('./pages/ShopDetailPage').then((m) => ({ default: m.ShopDetailPage })));
+const StockPage = lazy(() => import('./pages/StockPage').then((m) => ({ default: m.StockPage })));
+const ProductsPage = lazy(() => import('./pages/ProductsPage').then((m) => ({ default: m.ProductsPage })));
+const VehiclesPage = lazy(() => import('./pages/VehiclesPage').then((m) => ({ default: m.VehiclesPage })));
+const StaffPage = lazy(() => import('./pages/StaffPage').then((m) => ({ default: m.StaffPage })));
+const SuppliersPage = lazy(() => import('./pages/SuppliersPage').then((m) => ({ default: m.SuppliersPage })));
+const PurchasesPage = lazy(() => import('./pages/PurchasesPage').then((m) => ({ default: m.PurchasesPage })));
+const ExpensesPage = lazy(() => import('./pages/ExpensesPage').then((m) => ({ default: m.ExpensesPage })));
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
 
 const AppContent: React.FC = () => {
   const { isAuthenticated, login } = useBakery();
@@ -209,7 +211,16 @@ const AppContent: React.FC = () => {
         setIsCreatingTrip(true);
       }}
     >
-      {renderView()}
+      <Suspense
+        fallback={
+          <div className="p-12 flex items-center justify-center text-sm text-slate-500">
+            <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mr-2.5" />
+            Loading page...
+          </div>
+        }
+      >
+        {renderView()}
+      </Suspense>
 
       {/* Global Sales Modal */}
       <RecordSaleModal

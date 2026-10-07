@@ -5,6 +5,22 @@ const {
   getStaffIdForUser,
 } = require("../middleware/authorize");
 
+// Helper to check if trip_id column exists on payments table
+let hasTripIdColumnCache = null;
+const checkTripIdColumn = async (clientOrPool) => {
+  if (hasTripIdColumnCache !== null) return hasTripIdColumnCache;
+  try {
+    const db = clientOrPool || pool;
+    const res = await db.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'payments' AND column_name = 'trip_id' LIMIT 1`
+    );
+    hasTripIdColumnCache = res.rows.length > 0;
+  } catch {
+    hasTripIdColumnCache = false;
+  }
+  return hasTripIdColumnCache;
+};
+
 // CREATE PAYMENT
 const createPayment = async (req, res) => {
   const client = await pool.connect();
@@ -13,6 +29,7 @@ const createPayment = async (req, res) => {
     const {
       shop_id,
       sale_id,
+      trip_id,
       payment_method,
       amount,
       payment_date,
@@ -52,27 +69,79 @@ const createPayment = async (req, res) => {
       req.body.idempotency_key ||
       null;
 
-    // Role check: If restricted staff (Driver / Sales Staff), check that shop belongs to at least one assigned trip
-    if (req.user && !hasBusinessAccess(req.user)) {
-      const staffId = await getStaffIdForUser(pool, req.user.userId);
-      if (!staffId) {
-        return res.status(403).json({
-          message: "No staff profile linked to this user",
-        });
+    const isBusiness = req.user && hasBusinessAccess(req.user);
+    const staffId = !isBusiness ? await getStaffIdForUser(pool, req.user?.userId) : null;
+
+    if (!isBusiness && !staffId) {
+      return res.status(403).json({
+        message: "No staff profile linked to this user",
+      });
+    }
+
+    // 1. Resolve and validate consistency of sale_id, shop_id, and trip_id
+    let resolvedTripId = trip_id || null;
+
+    if (sale_id) {
+      const saleCheck = await pool.query(
+        `SELECT id, shop_id, trip_id FROM sales WHERE id = $1`,
+        [sale_id]
+      );
+      if (saleCheck.rows.length === 0) {
+        return res.status(404).json({ message: "Sale not found" });
+      }
+      const saleRow = saleCheck.rows[0];
+      if (saleRow.shop_id !== shop_id) {
+        return res.status(400).json({ message: "Payment shop does not match sale shop" });
+      }
+      if (trip_id && saleRow.trip_id && trip_id !== saleRow.trip_id) {
+        return res.status(400).json({ message: "Payment trip does not match sale trip" });
+      }
+      if (!resolvedTripId && saleRow.trip_id) {
+        resolvedTripId = saleRow.trip_id;
+      }
+    }
+
+    // 2. Validate trip authorization and shop assignment
+    if (resolvedTripId) {
+      if (!isBusiness) {
+        const access = await verifyTripAccess(resolvedTripId, req, pool);
+        if (!access.authorized) {
+          return res.status(access.status).json({ message: access.message });
+        }
+      } else {
+        const tripExists = await pool.query(`SELECT id FROM trips WHERE id = $1`, [resolvedTripId]);
+        if (tripExists.rows.length === 0) {
+          return res.status(404).json({ message: "Trip not found" });
+        }
       }
 
-      const assignedCheck = await pool.query(
-        `SELECT ts.id 
+      // Verify that shop is assigned to this trip
+      const shopTripCheck = await pool.query(
+        `SELECT id FROM trip_shops WHERE trip_id = $1 AND shop_id = $2 LIMIT 1`,
+        [resolvedTripId, shop_id]
+      );
+      if (shopTripCheck.rows.length === 0) {
+        return res.status(400).json({ message: "Shop is not assigned to this trip" });
+      }
+    } else if (!isBusiness) {
+      // Driver/Sales Staff recording payment without explicit trip_id or sale_id:
+      // Derive their active trip serving this shop
+      const activeTripCheck = await pool.query(
+        `SELECT t.id 
          FROM trip_shops ts
          JOIN trips t ON t.id = ts.trip_id
-         WHERE ts.shop_id = $1 AND (t.driver_id = $2 OR t.sales_staff_id = $2)
+         WHERE ts.shop_id = $1 
+           AND (t.driver_id = $2 OR t.sales_staff_id = $2)
+           AND t.status IN ('loaded', 'in_progress')
+         ORDER BY t.trip_date DESC, t.created_at DESC
          LIMIT 1`,
         [shop_id, staffId]
       );
-
-      if (assignedCheck.rows.length === 0) {
+      if (activeTripCheck.rows.length > 0) {
+        resolvedTripId = activeTripCheck.rows[0].id;
+      } else {
         return res.status(403).json({
-          message: "You are not assigned to any trips serving this shop",
+          message: "A valid assigned trip is required to record payments for this shop",
         });
       }
     }
@@ -93,7 +162,10 @@ const createPayment = async (req, res) => {
         );
         return res.status(200).json({
           message: "Payment already processed",
-          payment: existingPayment,
+          payment: {
+            ...existingPayment,
+            trip_id: existingPayment.trip_id || resolvedTripId || null,
+          },
           outstanding_balance: Number(balRes.rows[0].balance),
           is_duplicate: true,
         });
@@ -139,37 +211,12 @@ const createPayment = async (req, res) => {
         );
         return res.status(200).json({
           message: "Payment already processed",
-          payment: existingPayment,
+          payment: {
+            ...existingPayment,
+            trip_id: existingPayment.trip_id || resolvedTripId || null,
+          },
           outstanding_balance: Number(balRes.rows[0].balance),
           is_duplicate: true,
-        });
-      }
-    }
-
-    // If payment is linked to a sale, verify the sale
-    if (sale_id) {
-      const saleResult = await client.query(
-        `
-        SELECT id, shop_id, total_amount
-        FROM sales
-        WHERE id = $1
-        `,
-        [sale_id]
-      );
-
-      if (saleResult.rows.length === 0) {
-        await client.query("ROLLBACK");
-
-        return res.status(404).json({
-          message: "Sale not found",
-        });
-      }
-
-      if (saleResult.rows[0].shop_id !== shop_id) {
-        await client.query("ROLLBACK");
-
-        return res.status(400).json({
-          message: "Payment shop does not match sale shop",
         });
       }
     }
@@ -221,37 +268,76 @@ const createPayment = async (req, res) => {
       seqResult.rows[0].current_value
     ).padStart(5, "0")}`;
 
-    // Create payment with idempotency key and persistent receipt_number
-    const paymentResult = await client.query(
-      `
-      INSERT INTO payments (
-        receipt_number,
-        shop_id,
-        sale_id,
-        payment_method,
-        amount,
-        payment_date,
-        reference_number,
-        notes,
-        idempotency_key
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING *
-      `,
-      [
-        receiptNumber,
-        shop_id,
-        sale_id || null,
-        payment_method,
-        paymentAmount,
-        payment_date || new Date(),
-        reference_number || null,
-        notes || null,
-        idempotencyKey || null,
-      ]
-    );
+    // Create payment with idempotency key, persistent receipt_number, and trip_id
+    const tripColExists = await checkTripIdColumn(client);
+    let paymentResult;
 
-    const payment = paymentResult.rows[0];
+    if (tripColExists) {
+      paymentResult = await client.query(
+        `
+        INSERT INTO payments (
+          receipt_number,
+          shop_id,
+          sale_id,
+          trip_id,
+          payment_method,
+          amount,
+          payment_date,
+          reference_number,
+          notes,
+          idempotency_key
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING *
+        `,
+        [
+          receiptNumber,
+          shop_id,
+          sale_id || null,
+          resolvedTripId || null,
+          payment_method,
+          paymentAmount,
+          payment_date || new Date(),
+          reference_number || null,
+          notes || null,
+          idempotencyKey || null,
+        ]
+      );
+    } else {
+      paymentResult = await client.query(
+        `
+        INSERT INTO payments (
+          receipt_number,
+          shop_id,
+          sale_id,
+          payment_method,
+          amount,
+          payment_date,
+          reference_number,
+          notes,
+          idempotency_key
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING *
+        `,
+        [
+          receiptNumber,
+          shop_id,
+          sale_id || null,
+          payment_method,
+          paymentAmount,
+          payment_date || new Date(),
+          reference_number || null,
+          notes || null,
+          idempotencyKey || null,
+        ]
+      );
+    }
+
+    const payment = {
+      ...paymentResult.rows[0],
+      trip_id: paymentResult.rows[0].trip_id || resolvedTripId || null,
+    };
 
     // Add payment to shop ledger
     await client.query(
@@ -313,7 +399,10 @@ const createPayment = async (req, res) => {
           );
           return res.status(200).json({
             message: "Payment already processed",
-            payment: existingPayment,
+            payment: {
+              ...existingPayment,
+              trip_id: existingPayment.trip_id || resolvedTripId || null,
+            },
             outstanding_balance: Number(balRes.rows[0].balance),
             is_duplicate: true,
           });
@@ -336,37 +425,137 @@ const createPayment = async (req, res) => {
 // GET ALL PAYMENTS
 const getPayments = async (req, res) => {
   try {
-    let query = `
-      SELECT
-        p.*,
-        sh.shop_name
-      FROM payments p
-      JOIN shops sh ON sh.id = p.shop_id
-    `;
-    const params = [];
+    const { trip_id } = req.query;
+    const isBusiness = req.user && hasBusinessAccess(req.user);
+    const tripColExists = await checkTripIdColumn(pool);
 
-    // If caller is restricted staff (Driver / Sales Staff), only return payments for shops assigned to their trips
-    if (req.user && !hasBusinessAccess(req.user)) {
-      const staffId = await getStaffIdForUser(pool, req.user.userId);
-      if (!staffId) {
-        return res.json({ payments: [] });
+    // Case 1: Specific trip_id requested via query parameter
+    if (trip_id) {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(trip_id)) {
+        return res.status(400).json({ message: "Invalid trip ID format" });
       }
-      query += ` WHERE p.shop_id IN (
-        SELECT ts.shop_id
-        FROM trip_shops ts
-        JOIN trips t ON t.id = ts.trip_id
-        WHERE t.driver_id = $1 OR t.sales_staff_id = $1
-      ) `;
-      params.push(staffId);
+
+      // Backend trip authorization check
+      if (!isBusiness) {
+        const access = await verifyTripAccess(trip_id, req, pool);
+        if (!access.authorized) {
+          return res.status(access.status).json({ message: access.message });
+        }
+      } else {
+        const tripCheck = await pool.query(`SELECT id FROM trips WHERE id = $1`, [trip_id]);
+        if (tripCheck.rows.length === 0) {
+          return res.status(404).json({ message: "Trip not found" });
+        }
+      }
+
+      let query;
+      if (tripColExists) {
+        query = `
+          SELECT
+            p.*,
+            sh.shop_name,
+            COALESCE(p.trip_id, s.trip_id) AS trip_id
+          FROM payments p
+          JOIN shops sh ON sh.id = p.shop_id
+          LEFT JOIN sales s ON s.id = p.sale_id
+          WHERE (p.trip_id = $1 OR (p.trip_id IS NULL AND s.trip_id = $1))
+          ORDER BY p.payment_date DESC, p.created_at DESC
+        `;
+      } else {
+        query = `
+          SELECT
+            p.*,
+            sh.shop_name,
+            s.trip_id
+          FROM payments p
+          JOIN shops sh ON sh.id = p.shop_id
+          JOIN sales s ON s.id = p.sale_id
+          WHERE s.trip_id = $1
+          ORDER BY p.payment_date DESC, p.created_at DESC
+        `;
+      }
+
+      const result = await pool.query(query, [trip_id]);
+      return res.json({ payments: result.rows });
     }
 
-    query += ` ORDER BY p.payment_date DESC, p.created_at DESC `;
+    // Case 2: Unrestricted company-wide listing for Admin and Manager
+    if (isBusiness) {
+      let query;
+      if (tripColExists) {
+        query = `
+          SELECT
+            p.*,
+            sh.shop_name,
+            COALESCE(p.trip_id, s.trip_id) AS trip_id
+          FROM payments p
+          JOIN shops sh ON sh.id = p.shop_id
+          LEFT JOIN sales s ON s.id = p.sale_id
+          ORDER BY p.payment_date DESC, p.created_at DESC
+        `;
+      } else {
+        query = `
+          SELECT
+            p.*,
+            sh.shop_name,
+            s.trip_id
+          FROM payments p
+          JOIN shops sh ON sh.id = p.shop_id
+          LEFT JOIN sales s ON s.id = p.sale_id
+          ORDER BY p.payment_date DESC, p.created_at DESC
+        `;
+      }
+      const result = await pool.query(query);
+      return res.json({ payments: result.rows });
+    }
 
-    const result = await pool.query(query, params);
+    // Case 3: Driver and Sales Staff - strictly scoped to their assigned trips
+    const staffId = await getStaffIdForUser(pool, req.user?.userId);
+    if (!staffId) {
+      return res.json({ payments: [] });
+    }
 
-    res.json({
-      payments: result.rows,
-    });
+    let query;
+    if (tripColExists) {
+      query = `
+        SELECT
+          p.*,
+          sh.shop_name,
+          COALESCE(p.trip_id, s.trip_id) AS trip_id
+        FROM payments p
+        JOIN shops sh ON sh.id = p.shop_id
+        LEFT JOIN sales s ON s.id = p.sale_id
+        WHERE (
+          p.trip_id IN (
+            SELECT id FROM trips WHERE driver_id = $1 OR sales_staff_id = $1
+          )
+          OR (
+            p.trip_id IS NULL AND s.trip_id IN (
+              SELECT id FROM trips WHERE driver_id = $1 OR sales_staff_id = $1
+            )
+          )
+        )
+        ORDER BY p.payment_date DESC, p.created_at DESC
+      `;
+    } else {
+      query = `
+        SELECT
+          p.*,
+          sh.shop_name,
+          s.trip_id
+        FROM payments p
+        JOIN shops sh ON sh.id = p.shop_id
+        JOIN sales s ON s.id = p.sale_id
+        WHERE s.trip_id IN (
+          SELECT id FROM trips WHERE driver_id = $1 OR sales_staff_id = $1
+        )
+        ORDER BY p.payment_date DESC, p.created_at DESC
+      `;
+    }
+
+    const result = await pool.query(query, [staffId]);
+    return res.json({ payments: result.rows });
   } catch (error) {
     console.error("Get payments error:", error);
     res.status(500).json({

@@ -101,7 +101,10 @@ export const TripDetailPage: React.FC<TripDetailPageProps> = ({
   const tripSales = sales.filter((s) => s.tripId === trip.id);
   const tripSalesTotal = tripSales.reduce((sum, s) => sum + s.total, 0);
 
-  const tripPayments = payments.filter((p) => p.tripId === trip.id);
+  const tripSaleIds = new Set(tripSales.map((s) => s.id));
+  const tripPayments = payments.filter(
+    (p) => p.tripId === trip.id || (p.saleId && tripSaleIds.has(p.saleId))
+  );
   const tripCollectionTotal = tripPayments.reduce((sum, p) => sum + p.amount, 0);
 
   const tripReturns = returns.filter((r) => r.tripId === trip.id);
